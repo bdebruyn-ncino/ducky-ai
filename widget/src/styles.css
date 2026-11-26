@@ -108,3 +108,7 @@ button:disabled {
   background-color: #2e2e34;
   padding: 4px 10px;
 }
+
+[hidden] {
+  display: none !important;
+}

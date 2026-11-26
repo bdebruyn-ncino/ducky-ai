@@ -64,14 +64,14 @@ async function handleAsk({ id, question, project }: AskMessage) {
   runningQuestions.set(id, abortController);
 
   try {
-    send({ type: "status", id, state: "working" });
-
     const repo = await chooseRepo(id, question, project);
     if (!repo) {
       send({ type: "cancelled", id });
       return;
     }
 
+    // Only now is Ducky actually working; until here it may have been waiting for the user.
+    send({ type: "status", id, state: "working" });
     const result = await runAgent(config, repo, question, abortController);
     if (abortController.signal.aborted) {
       send({ type: "cancelled", id });

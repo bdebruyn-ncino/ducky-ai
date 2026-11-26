@@ -1,4 +1,6 @@
-import type { ClientMessage, ServerMessage } from "../../shared/messages.ts";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { decodeServerMessage, encode, type ClientMessage, type ServerMessage } from "../../shared/messages.ts";
 
 export interface Transport {
   send(message: ClientMessage): void;
@@ -7,8 +9,36 @@ export interface Transport {
 
 const MOCK_THINKING_MS = 1500;
 
-// Stands in for the sidecar until #8 connects the real one.
-export function createMockTransport(): Transport {
+// Inside the app, talk to the real sidecar. In a plain browser (npm run dev), use the mock.
+export function createTransport(): Transport {
+  return isTauri() ? createSidecarTransport() : createMockTransport();
+}
+
+// Rust runs the sidecar and passes its messages along as events.
+function createSidecarTransport(): Transport {
+  let listener: (message: ServerMessage) => void = () => {};
+
+  void listen<string>("sidecar-message", (event) => {
+    try {
+      listener(decodeServerMessage(event.payload));
+    } catch (error) {
+      console.error(error);
+    }
+  });
+
+  return {
+    onMessage(newListener) {
+      listener = newListener;
+    },
+    send(message) {
+      invoke("send_to_sidecar", { line: encode(message).trimEnd() }).catch((error) =>
+        listener({ type: "error", message: String(error) }),
+      );
+    },
+  };
+}
+
+function createMockTransport(): Transport {
   let listener: (message: ServerMessage) => void = () => {};
   const timers = new Map<string, number>();
 
