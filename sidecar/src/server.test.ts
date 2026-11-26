@@ -205,3 +205,62 @@ test("a request nobody answers is denied after the timeout", timeout, async () =
     sidecar.stop();
   }
 });
+
+test("a setup step nobody answers ends setup cleanly instead of leaving it open", timeout, async () => {
+  // No JSON config and an empty database: the sidecar starts first-run setup by itself.
+  const sidecar = startSidecar({
+    DUCKY_CONFIG: "",
+    DUCKY_DB: join(workDir, "setup-test.db"),
+    DUCKY_SETUP_TIMEOUT_MS: "300",
+  });
+  try {
+    await sidecar.next(); // ready
+    sidecar.send({ type: "widget-ready" });
+
+    const seen: ServerMessage[] = [];
+    for (;;) {
+      const message = await sidecar.next();
+      seen.push(message);
+      if (message.type === "setup-finished") {
+        break;
+      }
+    }
+
+    assert.deepEqual(seen.at(-1), { type: "setup-finished", completed: false });
+    assert.ok(
+      seen.some((message) => message.type === "note"),
+      "the user is told setup was cancelled",
+    );
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("first-run setup waits until the widget says it is listening", timeout, async () => {
+  const sidecar = startSidecar({ DUCKY_CONFIG: "", DUCKY_DB: join(workDir, "waits-test.db") });
+  try {
+    await sidecar.next(); // ready
+    const readyAt = Date.now();
+    setTimeout(() => sidecar.send({ type: "widget-ready" }), 500);
+
+    const first = await sidecar.next();
+    assert.ok(Date.now() - readyAt >= 450, "setup began before the widget was listening");
+    assert.ok(first.type === "confirmation-request" || first.type === "setup-prompt", "the first thing is a setup question");
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("a widget that asks again is told the current setup step again", timeout, async () => {
+  const sidecar = startSidecar({ DUCKY_CONFIG: "", DUCKY_DB: join(workDir, "again-test.db") });
+  try {
+    await sidecar.next(); // ready
+    sidecar.send({ type: "widget-ready" });
+    const first = await sidecar.next();
+
+    sidecar.send({ type: "widget-ready" });
+    assert.deepEqual(await sidecar.next(), first);
+  } finally {
+    sidecar.stop();
+  }
+});

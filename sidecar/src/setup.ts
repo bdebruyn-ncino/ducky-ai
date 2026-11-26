@@ -4,6 +4,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { DbProject, DbSettings } from "./db.ts";
 
+// Suggestions to pre-fill, so the answer most people want is one Enter away.
+export interface SetupDefaults {
+  awsProfile?: string;
+  modelArn?: string;
+  reposRoot?: string;
+}
+
 export interface SetupResult {
   settings: DbSettings;
   projects: DbProject[];
@@ -91,17 +98,22 @@ export function scanForRepos(root: string): DbProject[] {
  * Returns the completed settings + discovered projects, or null if the user cancelled.
  */
 export async function runSetup(
-  askText: (id: string, prompt: string, placeholder?: string) => Promise<string | null>,
+  askText: (id: string, prompt: string, placeholder?: string, defaultValue?: string) => Promise<string | null>,
   askChoice: (id: string, summary: string, options: string[]) => Promise<string | null>,
   report: (text: string) => void,
+  defaults: SetupDefaults = {},
 ): Promise<SetupResult | null> {
   // ── 1. AWS profile ──────────────────────────────────────────────────────────
   const profiles = readAwsProfiles();
   let awsProfile: string | null;
   if (profiles.length > 0) {
-    awsProfile = await askChoice("setup-profile", "Which AWS profile should Ducky use?", profiles);
+    // The profile used last time goes first.
+    const ordered = defaults.awsProfile && profiles.includes(defaults.awsProfile)
+      ? [defaults.awsProfile, ...profiles.filter((profile) => profile !== defaults.awsProfile)]
+      : profiles;
+    awsProfile = await askChoice("setup-profile", "Which AWS profile should Ducky use?", ordered);
   } else {
-    awsProfile = await askText("setup-profile", "Enter your AWS profile name:", "default");
+    awsProfile = await askText("setup-profile", "Enter your AWS profile name:", "default", defaults.awsProfile ?? "default");
   }
   if (!awsProfile) return null;
 
@@ -120,6 +132,7 @@ export async function runSetup(
     "setup-model-arn",
     "Enter your Bedrock application inference profile ARN:",
     "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/…",
+    defaults.modelArn,
   );
   if (!modelArn) return null;
 
@@ -127,7 +140,7 @@ export async function runSetup(
   const awsRegion = extractRegionFromArn(modelArn) ?? verifyRegion;
 
   // ── 4. Repos root ───────────────────────────────────────────────────────────
-  const reposRoot = await askText("setup-repos-root", "Where are your git repos? (full path):", "~/Apps");
+  const reposRoot = await askText("setup-repos-root", "Where are your git repos? (full path):", "~/Apps", defaults.reposRoot);
   if (!reposRoot) return null;
 
   // ── 5. Scan for git repos ───────────────────────────────────────────────────

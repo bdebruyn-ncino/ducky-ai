@@ -44,6 +44,8 @@ Every message about a question carries the `id` the widget gave it, so several q
 3. `cd widget && npm install && npm run tauri dev`
 4. Press `Control+Option+D`, or click the duck in the menu bar, and ask a question.
 
+The first time Ducky opens with nothing saved, the window comes forward by itself and setup starts: it asks for your AWS profile, your model ARN and where your repos are, pre-filling what it can. The Setup button in the footer re-runs it later.
+
 The app starts and stops the sidecar itself (`node --import tsx src/server.ts` in `sidecar/`). Rust owns the process: the webview can only call one command, `send_to_sidecar`, and listen for `sidecar-message` events. If the sidecar crashes it is restarted once; if it keeps stopping, the widget shows an error.
 
 ### Voice

@@ -10,7 +10,9 @@ export type ClientMessage =
   // User's answer to a free-text setup prompt.
   | { type: "setup-response"; id: string; value: string }
   // User clicked the Setup button to (re-)run first-time setup.
-  | { type: "run-setup" };
+  | { type: "run-setup" }
+  // The widget has loaded and is listening. The sidecar may have said things before that, which were lost.
+  | { type: "widget-ready" };
 
 export type ServerMessage =
   | { type: "ready" }
@@ -24,15 +26,18 @@ export type ServerMessage =
   | { type: "confirmation-expired"; id: string; confirmationId: string }
   | { type: "session-cleared" }
   // A setup step that needs free-text input from the user.
-  | { type: "setup-prompt"; id: string; prompt: string; placeholder?: string }
+  // `defaultValue` is a suggestion to pre-fill in the text box, which the user can accept or change.
+  | { type: "setup-prompt"; id: string; prompt: string; placeholder?: string; defaultValue?: string }
   // An informational note with no user input required (used by setup for status updates).
-  | { type: "note"; text: string };
+  | { type: "note"; text: string }
+  // Setup is over, finished or cancelled. The widget can stop showing setup state.
+  | { type: "setup-finished"; completed: boolean };
 
 export function encode(message: ClientMessage | ServerMessage): string {
   return JSON.stringify(message) + "\n";
 }
 
-const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired", "session-cleared", "setup-prompt", "note"];
+const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired", "session-cleared", "setup-prompt", "note", "setup-finished"];
 
 const isString = (value: unknown): value is string => typeof value === "string";
 const isOptionalString = (value: unknown) => value === undefined || isString(value);
@@ -57,7 +62,8 @@ export function decodeClientMessage(line: string): ClientMessage {
       isOptionalString(value.choice)) ||
     value.type === "new-session" ||
     (value.type === "setup-response" && isString(value.id) && isString(value.value)) ||
-    value.type === "run-setup";
+    value.type === "run-setup" ||
+    value.type === "widget-ready";
 
   if (!isValid) {
     throw new Error(`Not a valid client message: ${line}`);

@@ -19,13 +19,17 @@ import {
   NOTIFICATION_WAITING,
   pickPhrase,
   SENDING_TEXT,
+  SETUP_DEFAULT_HINT,
+  SETUP_HINT,
+  SETUP_STATUS,
+  SETUP_UNFINISHED_HINT,
   WAITING_PHRASES,
   WORKING_PHRASES,
 } from "./phrases.ts";
 import { createTransport } from "./transport.ts";
 import { setUpVoice } from "./voice.ts";
 
-type MessageKind = "question" | "answer" | "error" | "note";
+type MessageKind = "question" | "answer" | "error" | "note" | "prompt" | "reply";
 type Activity = "idle" | "working" | "waiting" | "sending";
 
 // After a spoken question, wait this long so the user can stop it before it is sent.
@@ -69,11 +73,16 @@ const runSetupButton = byId<HTMLButtonElement>("run-setup");
 
 // When non-null, the form input answers a setup prompt instead of sending an ask.
 let activeSetupId: string | undefined;
+// True from the first setup step until the sidecar says setup is over.
+let setupActive = false;
+// The id of the setup step that is waiting, so Cancel can name it.
+let setupStepId: string | undefined;
 
 // ---- The conversation: exchanges, newest open, older ones folded to one line ----
 
 function setView() {
-  widget.dataset.view = messageList.querySelector(".exchange") ? "conversation" : "empty";
+  // Anything in the list (an exchange, a setup note, an error) means a conversation has begun.
+  widget.dataset.view = messageList.childElementCount > 0 ? "conversation" : "empty";
 }
 
 function startExchange(question: string) {
@@ -106,6 +115,7 @@ function createMessageElement(className: string): HTMLElement {
 
 function appendToConversation(element: HTMLElement) {
   (currentBody ?? messageList).append(element);
+  setView();
   element.scrollIntoView({ block: "end" });
 }
 
@@ -123,6 +133,9 @@ function addMessage(kind: MessageKind, text: string) {
 // ---- The stage: the duck and one line saying what is going on ----
 
 function idleStatus(): string {
+  if (setupActive) {
+    return SETUP_STATUS;
+  }
   if (textOnly) {
     return IDLE_TEXT_ONLY;
   }
@@ -131,7 +144,18 @@ function idleStatus(): string {
 
 function showIdleStatus() {
   statusLine.textContent = idleStatus();
-  statusHint.textContent = "";
+  statusHint.textContent = setupActive ? SETUP_HINT : "";
+}
+
+// Which buttons make sense right now. Setup counts as busy, so Cancel stays available throughout it.
+function updateControls() {
+  const free = currentActivity === "idle" && !setupActive;
+  cancelButton.hidden = free;
+  askButton.disabled = currentActivity === "working" || currentActivity === "waiting";
+  newSessionButton.disabled = !free;
+  // While setup is running the Setup button has nothing to offer, so it steps out of the way.
+  runSetupButton.hidden = setupActive;
+  runSetupButton.disabled = !free;
 }
 
 function showPhrase(phrases: string[]) {
@@ -142,7 +166,6 @@ function showPhrase(phrases: string[]) {
 function setActivity(activity: Activity) {
   const changed = activity !== currentActivity;
   currentActivity = activity;
-  cancelButton.hidden = activity === "idle";
   if (changed) {
     window.clearInterval(phraseTimer);
     if (activity === "working") {
@@ -154,9 +177,52 @@ function setActivity(activity: Activity) {
       showIdleStatus();
     }
   }
-  askButton.disabled = activity === "working" || activity === "waiting";
-  newSessionButton.disabled = activity !== "idle";
+  updateControls();
   duck.setActivity(activity);
+}
+
+// ---- First-run setup: the sidecar asks the questions, the widget makes room for them ----
+
+// Ducky starts hidden in the menu bar, so the first setup step brings the window forward.
+async function bringWindowForward() {
+  if (!isTauri()) {
+    return;
+  }
+  const appWindow = getCurrentWindow();
+  if (!(await appWindow.isVisible())) {
+    await appWindow.show();
+    await appWindow.setFocus();
+  }
+}
+
+function beginSetup(stepId: string) {
+  const isFirstStep = !setupActive;
+  setupActive = true;
+  setupStepId = stepId;
+  if (isFirstStep) {
+    void bringWindowForward();
+  }
+  updateControls();
+  if (currentActivity === "idle" && !listening) {
+    showIdleStatus();
+  }
+}
+
+function endSetup(completed: boolean) {
+  setupActive = false;
+  setupStepId = undefined;
+  activeSetupId = undefined;
+  questionInput.placeholder = IDLE_PLACEHOLDER;
+  removeStaleConfirmations();
+  hideTextBox();
+  // Setup is over, so whatever the duck was doing (waiting on a step, or "working" after a timeout) is over too.
+  setActivity("idle");
+  if (!listening) {
+    showIdleStatus();
+    if (!completed) {
+      statusHint.textContent = SETUP_UNFINISHED_HINT;
+    }
+  }
 }
 
 function syncDuckVoice() {
@@ -192,10 +258,14 @@ function applyTextOnly(on: boolean) {
 
 // ---- Asking ----
 
+// Confirmation buttons left over from a question or a setup step (for example after Cancel) can no longer be used.
+function removeStaleConfirmations() {
+  messageList.querySelectorAll(".message.confirmation button").forEach((button) => button.remove());
+}
+
 function finishQuestion() {
   activeQuestionId = undefined;
-  // Confirmation buttons left over from this question (for example after Cancel) can no longer be used.
-  messageList.querySelectorAll(".message.confirmation button").forEach((button) => button.remove());
+  removeStaleConfirmations();
   setActivity("idle");
   if (!form.hidden) {
     questionInput.focus();
@@ -311,6 +381,14 @@ function handleMessage(message: ServerMessage) {
       duck.react("cancelled");
       break;
     case "confirmation-request": {
+      // The sidecar repeats a setup step when the widget says it is ready, so skip one that is already showing.
+      if (messageList.querySelector(`[data-confirmation-id="${CSS.escape(message.confirmationId)}"]`)) {
+        break;
+      }
+      // Setup asks its multiple-choice questions the same way, with ids that start with "setup".
+      if (message.id.startsWith("setup")) {
+        beginSetup(message.id);
+      }
       const item = createMessageElement("confirmation");
       item.dataset.confirmationId = message.confirmationId;
 
@@ -333,7 +411,8 @@ function handleMessage(message: ServerMessage) {
           choice,
         });
         // The agent carries on after any answer. If it was a no, the sidecar follows up with "cancelled".
-        setActivity("working");
+        // During setup nothing is working: the next setup step simply arrives.
+        setActivity(setupActive ? "idle" : "working");
       };
 
       const addButton = (className: string, label: string, onClick: () => void) => {
@@ -373,8 +452,8 @@ function handleMessage(message: ServerMessage) {
         result.textContent = "No answer, so it was denied.";
         item.append(result);
       }
-      // The agent carries on without it.
-      setActivity("working");
+      // The agent carries on without it. (During setup nothing is working: the wizard ends or moves on.)
+      setActivity(setupActive ? "idle" : "working");
       break;
     }
     case "session-cleared":
@@ -385,21 +464,37 @@ function handleMessage(message: ServerMessage) {
       statusHint.textContent = NEW_CONVERSATION_HINT;
       break;
     case "setup-prompt": {
-      // Switch the input into setup mode: next submit answers the prompt.
-      activeSetupId = message.id;
-      addMessage("note", message.prompt);
-      if (message.placeholder) {
-        questionInput.placeholder = message.placeholder;
+      if (activeSetupId === message.id) {
+        break;
       }
-      // Enable the form so the user can type their answer.
-      askButton.disabled = false;
-      questionInput.focus();
+      // The text box opens for this answer, and the next submit answers the prompt.
+      beginSetup(message.id);
+      activeSetupId = message.id;
+      addMessage("prompt", message.prompt);
+      questionInput.placeholder = message.placeholder ?? IDLE_PLACEHOLDER;
+      showTextBox();
+      if (message.defaultValue) {
+        // The answer most people want, pre-filled and selected: Enter accepts it, typing replaces it.
+        questionInput.value = message.defaultValue;
+        questionInput.select();
+        statusHint.textContent = SETUP_DEFAULT_HINT;
+      }
+      void notifyIfHidden(NOTIFICATION_WAITING);
       break;
     }
     case "note":
       addMessage("note", message.text);
+      if (setupActive && currentActivity === "idle" && !listening) {
+        // The wizard's progress ("Verifying AWS credentials...") shows next to the duck, not only in the list.
+        statusHint.textContent = message.text;
+      }
+      break;
+    case "setup-finished":
+      endSetup(message.completed);
       break;
     case "ready":
+      // The sidecar (re)started. Tell it we are listening, so first-run setup can begin.
+      transport.send({ type: "widget-ready" });
       break;
   }
 }
@@ -441,8 +536,8 @@ const voice = setUpVoice(duckButton, modeToggle, {
     if (cancelCountdown()) {
       return true;
     }
-    if (textOnly) {
-      // No voice in text-only mode: the duck just points at the text box.
+    if (textOnly || activeSetupId) {
+      // No voice in text-only mode, and setup answers are typed: the duck just points at the text box.
       showTextBox();
       return true;
     }
@@ -465,9 +560,10 @@ form.addEventListener("submit", (event) => {
     }
     const id = activeSetupId;
     activeSetupId = undefined;
-    addMessage("question", value);
+    addMessage("reply", value);
     questionInput.value = "";
     questionInput.placeholder = IDLE_PLACEHOLDER;
+    hideTextBox();
     transport.send({ type: "setup-response", id, value });
     return;
   }
@@ -487,6 +583,9 @@ cancelButton.addEventListener("click", () => {
   }
   if (activeQuestionId) {
     transport.send({ type: "cancel", id: activeQuestionId });
+  } else if (setupActive) {
+    // Setup is not a question, so Cancel names the setup step that is waiting.
+    transport.send({ type: "cancel", id: setupStepId ?? "setup" });
   }
 });
 
@@ -526,3 +625,6 @@ runSetupButton.addEventListener("click", () => {
 });
 
 transport.onMessage(handleMessage);
+// The sidecar may have started before this page was listening, so say so now. If nothing is saved yet,
+// this is what makes first-run setup begin as soon as Ducky opens.
+transport.send({ type: "widget-ready" });

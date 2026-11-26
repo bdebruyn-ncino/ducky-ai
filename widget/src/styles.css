@@ -235,6 +235,22 @@ button:disabled {
   box-shadow: inset 0 0 0 1px var(--danger);
 }
 
+/* A question the setup wizard asks, and the user's typed answer to it. */
+.message.prompt {
+  background-color: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.message.reply {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 6px 12px;
+  font-weight: 500;
+  color: var(--on-accent);
+  background-color: var(--accent);
+  border-radius: 14px 14px 4px 14px;
+}
+
 .message.note {
   align-self: center;
   padding: 0;
