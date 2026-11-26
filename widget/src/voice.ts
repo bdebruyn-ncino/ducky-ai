@@ -81,9 +81,7 @@ export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButton
       stop();
       return;
     }
-    if (dictationOn) {
-      setListening(true);
-    }
+    // The page shows "listening" only when Rust says the microphone is on ("voice-started").
     // With Dictation off, Rust says so in the conversation.
     void invoke("start_listening");
   });
@@ -102,6 +100,7 @@ export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButton
       handlers.onPartialTranscript(text);
     }
   });
+  void listen("voice-started", () => setListening(true));
   void listen<string>("voice-error", (event) => handlers.onError(event.payload));
   void listen("voice-stopped", () => {
     setListening(false);

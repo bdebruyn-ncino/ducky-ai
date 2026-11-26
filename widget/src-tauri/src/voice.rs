@@ -9,7 +9,7 @@ use std::{
     ptr::NonNull,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -29,6 +29,7 @@ use tauri::{AppHandle, Emitter};
 
 const TRANSCRIPT_EVENT: &str = "voice-transcript";
 const ERROR_EVENT: &str = "voice-error";
+const STARTED_EVENT: &str = "voice-started";
 const STOPPED_EVENT: &str = "voice-stopped";
 
 // The transcript must stay unchanged this long before we decide the speaker has finished. People often
@@ -52,6 +53,8 @@ const NO_RECOGNIZER: &str = "No on-device speech recognition is available for yo
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 static LISTENING: AtomicU64 = AtomicU64::new(0);
 static ACTIVE: AtomicU64 = AtomicU64::new(0);
+// Whether the current session has heard any words yet. Stopping before that is a cancel, not a question.
+static HEARD_WORDS: AtomicBool = AtomicBool::new(false);
 
 // To see where the time goes, run with DUCKY_DEBUG set: each step prints how long after the click it happened.
 static CLICKED_AT: Mutex<Option<Instant>> = Mutex::new(None);
@@ -86,7 +89,7 @@ struct Session {
     request: Retained<SFSpeechAudioBufferRecognitionRequest>,
     // Held so Apple's objects live as long as the session.
     _recognizer: Retained<SFSpeechRecognizer>,
-    _task: Retained<SFSpeechRecognitionTask>,
+    task: Retained<SFSpeechRecognitionTask>,
 }
 
 thread_local! {
@@ -136,15 +139,24 @@ pub fn start(app: AppHandle) {
 
 pub fn stop(app: AppHandle) {
     on_main(&app, |app| {
-        if LISTENING.load(Ordering::SeqCst) != 0 {
+        if LISTENING.load(Ordering::SeqCst) == 0 {
+            return;
+        }
+        if HEARD_WORDS.load(Ordering::SeqCst) {
             finish(app);
+        } else {
+            // Nothing was said, so there is no result to wait for: end the session now so the next click works at once.
+            debug_log("cancelled before any words were heard");
+            teardown(app);
         }
     });
 }
 
 fn start_on_main(app: AppHandle) {
     if ACTIVE.load(Ordering::SeqCst) != 0 {
-        return;
+        // An earlier session is still waiting for its final result. The user wants to talk again, so let it go.
+        debug_log("ending the earlier session to start a new one");
+        release_session();
     }
     if dictation_is_off() {
         report_error(&app, DICTATION_OFF);
@@ -236,14 +248,29 @@ fn silence_needed(text: &str) -> Duration {
     }
 }
 
+// Apple sometimes ends with an empty final result even though words were heard. Keep what we heard so the question is not lost.
+fn text_to_report(heard: &str, progress: &Mutex<Progress>) -> String {
+    if !heard.is_empty() {
+        return heard.to_string();
+    }
+    progress
+        .lock()
+        .map(|progress| progress.text.clone())
+        .unwrap_or_default()
+}
+
 fn note_progress(progress: &Mutex<Progress>, text: &str) {
     if let Ok(mut progress) = progress.lock()
+        && !text.is_empty()
         && progress.text != text
     {
         debug_log(&format!(
             "heard \"{text}\" ({}ms after the last change)",
             progress.changed_at.elapsed().as_millis()
         ));
+        if !text.is_empty() {
+            HEARD_WORDS.store(true, Ordering::SeqCst);
+        }
         progress.text = text.to_string();
         progress.changed_at = Instant::now();
     }
@@ -262,8 +289,9 @@ fn result_handler(
             }
 
             if let Some(result) = unsafe { result.as_ref() } {
-                let text = unsafe { result.bestTranscription().formattedString() }.to_string();
+                let heard = unsafe { result.bestTranscription().formattedString() }.to_string();
                 let is_final = unsafe { result.isFinal() };
+                let text = text_to_report(&heard, &progress);
                 if !text.is_empty()
                     && progress
                         .lock()
@@ -305,6 +333,7 @@ fn begin(app: AppHandle) {
     let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
     ACTIVE.store(id, Ordering::SeqCst);
     LISTENING.store(id, Ordering::SeqCst);
+    HEARD_WORDS.store(false, Ordering::SeqCst);
     let progress = Arc::new(Mutex::new(Progress {
         text: String::new(),
         changed_at: Instant::now(),
@@ -352,9 +381,10 @@ fn begin(app: AppHandle) {
             engine,
             request,
             _recognizer: recognizer,
-            _task: task,
+            task,
         });
     });
+    let _ = app.emit(STARTED_EVENT, ());
     watch_for_silence(app, id, progress);
 }
 
@@ -408,17 +438,23 @@ fn finish(app: AppHandle) {
     });
 }
 
-fn teardown(app: AppHandle) {
+// Frees the microphone and the recognizer. Results from the old session are ignored from here on.
+fn release_session() {
     ACTIVE.store(0, Ordering::SeqCst);
     LISTENING.store(0, Ordering::SeqCst);
     SESSION.with(|session| {
         if let Some(session) = session.borrow_mut().take() {
             unsafe {
+                session.task.cancel();
                 session.engine.inputNode().removeTapOnBus(0);
                 session.engine.stop();
             }
         }
     });
+}
+
+fn teardown(app: AppHandle) {
+    release_session();
     let _ = app.emit(STOPPED_EVENT, ());
 }
 
