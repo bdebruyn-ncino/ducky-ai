@@ -16,7 +16,8 @@ use std::{
 };
 
 use block2::RcBlock;
-use objc2::{AnyThread, rc::Retained};
+use objc2::{AnyThread, rc::Retained, runtime::Bool};
+use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
 use objc2_avf_audio::{AVAudioEngine, AVAudioPCMBuffer, AVAudioTime};
 use objc2_foundation::{NSError, NSLocale, NSString};
 use objc2_speech::{
@@ -31,7 +32,7 @@ const ERROR_EVENT: &str = "voice-error";
 const STOPPED_EVENT: &str = "voice-stopped";
 
 // The transcript must stay unchanged this long before we decide the speaker has finished.
-const SILENCE_MEANS_DONE: Duration = Duration::from_millis(1200);
+const SILENCE_MEANS_DONE: Duration = Duration::from_millis(1000);
 const MAX_LISTEN: Duration = Duration::from_secs(60);
 // If the final result never arrives after we stop listening, clean up anyway.
 const FINAL_RESULT_GRACE: Duration = Duration::from_secs(3);
@@ -39,6 +40,8 @@ const FINAL_RESULT_GRACE: Duration = Duration::from_secs(3);
 const NOT_ALLOWED: &str = "Speech recognition is not allowed. Turn it on in System Settings, Privacy & Security, Speech Recognition.";
 const DICTATION_OFF: &str = "Voice needs macOS Dictation. Turn it on in System Settings, Keyboard, Dictation, then click the microphone again.";
 const DICTATION_UNAVAILABLE: &str = "macOS says Dictation is off, or is not set up for this language. In System Settings, Keyboard, Dictation, check it is on and set to your language, or set DUCKY_SPEECH_LOCALE to the language you dictate in (for example en-ZA).";
+const MIC_DENIED: &str =
+    "Microphone access is off. Turn it on in System Settings, Privacy & Security, Microphone.";
 const NO_RECOGNIZER: &str = "No on-device speech recognition is available for your language. Check System Settings, Keyboard, Dictation, or set DUCKY_SPEECH_LOCALE (for example en-ZA).";
 
 // Ids tell old sessions from new ones. LISTENING is cleared when we stop listening; ACTIVE when
@@ -46,6 +49,22 @@ const NO_RECOGNIZER: &str = "No on-device speech recognition is available for yo
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 static LISTENING: AtomicU64 = AtomicU64::new(0);
 static ACTIVE: AtomicU64 = AtomicU64::new(0);
+
+// To see where the time goes, run with DUCKY_DEBUG set: each step prints how long after the click it happened.
+static CLICKED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn debug_log(step: &str) {
+    if std::env::var_os("DUCKY_DEBUG").is_none() {
+        return;
+    }
+    let elapsed = CLICKED_AT
+        .lock()
+        .ok()
+        .and_then(|clicked_at| *clicked_at)
+        .map(|clicked_at| clicked_at.elapsed().as_millis())
+        .unwrap_or(0);
+    eprintln!("[voice +{elapsed}ms] {step}");
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,6 +120,10 @@ fn friendly_error(reason: &str, locale: &str) -> String {
 }
 
 pub fn start(app: AppHandle) {
+    if let Ok(mut clicked_at) = CLICKED_AT.lock() {
+        *clicked_at = Some(Instant::now());
+    }
+    debug_log("click received");
     on_main(&app, start_on_main);
 }
 
@@ -121,15 +144,16 @@ fn start_on_main(app: AppHandle) {
         let _ = app.emit(STOPPED_EVENT, ());
         return;
     }
+    debug_log("dictation check passed");
 
     let status = unsafe { SFSpeechRecognizer::authorizationStatus() };
     if status == SFSpeechRecognizerAuthorizationStatus::Authorized {
-        begin(app);
+        with_microphone_access(app);
     } else if status == SFSpeechRecognizerAuthorizationStatus::NotDetermined {
         let handle = app.clone();
         let handler = RcBlock::new(move |status: SFSpeechRecognizerAuthorizationStatus| {
             if status == SFSpeechRecognizerAuthorizationStatus::Authorized {
-                on_main(&handle, begin);
+                on_main(&handle, with_microphone_access);
             } else {
                 report_error(&handle, NOT_ALLOWED);
                 let _ = handle.emit(STOPPED_EVENT, ());
@@ -140,6 +164,37 @@ fn start_on_main(app: AppHandle) {
         report_error(&app, NOT_ALLOWED);
         let _ = app.emit(STOPPED_EVENT, ());
     }
+}
+
+// Without microphone permission the engine would just hear silence, so ask first and say so if
+// the answer is no.
+fn with_microphone_access(app: AppHandle) {
+    let Some(audio) = (unsafe { AVMediaTypeAudio }) else {
+        begin(app);
+        return;
+    };
+
+    let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(audio) };
+    if status == AVAuthorizationStatus::Authorized {
+        begin(app);
+    } else if status == AVAuthorizationStatus::NotDetermined {
+        let handle = app.clone();
+        let handler = RcBlock::new(move |granted: Bool| {
+            if granted.as_bool() {
+                on_main(&handle, begin);
+            } else {
+                stop_with_error(&handle, MIC_DENIED);
+            }
+        });
+        unsafe { AVCaptureDevice::requestAccessForMediaType_completionHandler(audio, &handler) };
+    } else {
+        stop_with_error(&app, MIC_DENIED);
+    }
+}
+
+fn stop_with_error(app: &AppHandle, message: &str) {
+    report_error(app, message);
+    let _ = app.emit(STOPPED_EVENT, ());
 }
 
 // The language to listen in: DUCKY_SPEECH_LOCALE if set, then the system's own settings.
@@ -189,6 +244,16 @@ fn result_handler(
             if let Some(result) = unsafe { result.as_ref() } {
                 let text = unsafe { result.bestTranscription().formattedString() }.to_string();
                 let is_final = unsafe { result.isFinal() };
+                if !text.is_empty()
+                    && progress
+                        .lock()
+                        .is_ok_and(|progress| progress.text.is_empty())
+                {
+                    debug_log("first words heard");
+                }
+                if is_final {
+                    debug_log("final result");
+                }
                 note_progress(&progress, &text);
                 let _ = app.emit(TRANSCRIPT_EVENT, Transcript { text, is_final });
                 if is_final {
@@ -204,6 +269,7 @@ fn result_handler(
 }
 
 fn begin(app: AppHandle) {
+    debug_log("permissions ok, creating the recognizer");
     let Some((recognizer, locale)) = pick_recognizer() else {
         report_error(&app, NO_RECOGNIZER);
         let _ = app.emit(STOPPED_EVENT, ());
@@ -252,6 +318,7 @@ fn begin(app: AppHandle) {
         return;
     }
 
+    debug_log("microphone started, listening");
     SESSION.with(|session| {
         *session.borrow_mut() = Some(Session {
             engine,
@@ -289,6 +356,7 @@ fn finish(app: AppHandle) {
     if id == 0 {
         return;
     }
+    debug_log("audio ended (silence or stop)");
     SESSION.with(|session| {
         if let Some(session) = session.borrow().as_ref() {
             unsafe {

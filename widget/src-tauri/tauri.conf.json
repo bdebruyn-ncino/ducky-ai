@@ -18,6 +18,7 @@
         "height": 520,
         "center": true,
         "decorations": true,
+        "acceptFirstMouse": true,
         "alwaysOnTop": true,
         "resizable": false,
         "skipTaskbar": true,

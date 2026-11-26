@@ -113,23 +113,122 @@ button:disabled {
   display: none !important;
 }
 
-#mic {
-  background-color: #2e2e34;
-  padding: 8px 10px;
+.ask-form {
+  align-items: center;
 }
 
-#mic.listening {
-  background-color: #c0392b;
-  animation: pulse 1.2s ease-in-out infinite;
+.link-button {
+  align-self: center;
+  background: none;
+  color: #a0a0a8;
+  font-size: 12px;
+  padding: 0;
+}
+
+.link-button:hover {
+  color: #f2f2f2;
+}
+
+/* The duck: a round button that reacts to what Ducky is doing.
+   Only transform and opacity are animated, on whole elements, so it stays smooth. */
+.duck {
+  position: relative;
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  line-height: 0;
+  border-radius: 50%;
+  background-color: #2b2d36;
+  box-shadow: inset 0 0 0 1px #3a3d48;
+  transition: transform 0.15s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.duck:hover {
+  transform: scale(1.06);
+  background-color: #343746;
+}
+
+.duck:active {
+  transform: scale(0.95);
+}
+
+.duck-figure {
+  display: block;
+  will-change: transform;
+}
+
+.duck-image {
+  display: block;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* Listening: a yellow ring spreads out like a sound wave while the duck pulses. */
+.duck.listening {
+  background-color: #3d3410;
+  box-shadow: inset 0 0 0 2px #ffd23f;
+}
+
+.duck.listening .duck-figure {
+  animation: pulse 0.9s ease-in-out infinite;
+}
+
+.duck.listening::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid #ffd23f;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: ring 1.2s ease-out infinite;
+}
+
+/* Waiting for the answer, or counting down to send: a gentle rock. */
+.duck.working .duck-figure {
+  animation: rock 0.9s ease-in-out infinite;
+}
+
+.duck.sending {
+  box-shadow: inset 0 0 0 2px #ff9f1c;
+}
+
+.duck.sending .duck-figure {
+  animation: rock 1.4s ease-in-out infinite;
 }
 
 @keyframes pulse {
   50% {
-    opacity: 0.6;
+    transform: scale(1.07);
   }
 }
 
+@keyframes rock {
+  0%,
+  100% {
+    transform: rotate(-5deg);
+  }
+  50% {
+    transform: rotate(5deg);
+  }
+}
 
-#mic svg {
-  display: block;
+@keyframes ring {
+  from {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duck,
+  .duck-figure,
+  .duck::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
