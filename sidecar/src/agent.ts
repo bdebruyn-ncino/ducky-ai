@@ -1,7 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { join } from "node:path";
 import type { DuckyConfig } from "./config.ts";
-import { ATLASSIAN_READ_TOOLS } from "./connectors.ts";
+import { ATLASSIAN_READ_TOOLS, buildMcpServers, GITHUB_READ_TOOLS } from "./connectors.ts";
 import { listRepos, resolveProject } from "./projects.ts";
 
 const READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
@@ -34,16 +34,20 @@ export async function runAgent(
   }
   const cwd = join(config.reposRoot, match.name);
 
-  const allAllowedTools = [...READ_ONLY_TOOLS, ...ATLASSIAN_READ_TOOLS];
+  const mcpServers = buildMcpServers(config);
+  const allAllowedTools = [...READ_ONLY_TOOLS, ...ATLASSIAN_READ_TOOLS, ...GITHUB_READ_TOOLS];
 
   const messages = query({
     prompt: question,
     options: {
       cwd,
       model: config.modelArn,
-      // Read-only built-in tools plus the Atlassian MCP server from user settings.
+      // Read-only built-in tools, Atlassian from user settings, GitHub if configured.
       tools: allAllowedTools,
       allowedTools: allAllowedTools,
+      mcpServers,
+      // Keeps MCP server env (GitHub token) off the command line.
+      mcpServersDelivery: "initialize",
       // "user" picks up MCP servers the user has configured globally in Claude Code.
       settingSources: ["user", "project"],
       systemPrompt: {
