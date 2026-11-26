@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "ask": "tsx src/ask.ts",
+    "serve": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test src/*.test.ts"
   },

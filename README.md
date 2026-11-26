@@ -19,6 +19,24 @@ Wispr Flow (voice) -> widget -> sidecar (agent) -> tools -> answer back
 - **Connectors:** read-only Jira and GitHub through MCP.
 - **Shared types:** one `messages.ts` used by both the widget and the sidecar.
 
+## Protocol
+
+The widget starts the sidecar (`npm run serve` in `sidecar/`) and talks to it over its stdin and stdout, one JSON object per line. The message types live in `shared/messages.ts`. stdout carries protocol messages only; the sidecar logs to stderr.
+
+| Direction | Message | Purpose |
+|---|---|---|
+| widget to sidecar | `ask` | A question. `project` is optional; if it is missing the sidecar finds the repo in the question text |
+| widget to sidecar | `cancel` | Stop a running question |
+| widget to sidecar | `confirmation-response` | Answer a confirmation request: approve or deny, and `choice` when picking from `options` |
+| sidecar to widget | `ready` | The sidecar has started |
+| sidecar to widget | `status` | The question is being worked on |
+| sidecar to widget | `answer` | The final answer |
+| sidecar to widget | `cancelled` | The question was cancelled |
+| sidecar to widget | `error` | Something failed; `id` is absent when the input line itself was invalid |
+| sidecar to widget | `confirmation-request` | Needs the user: approve an action, or pick one of `options` (for example which repo) |
+
+Every message about a question carries the `id` the widget gave it, so several questions can run at once.
+
 ## Scope
 
 In scope:
