@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { ServerMessage } from "../../shared/messages.ts";
+import { renderMarkdown } from "./markdown.ts";
 import { createTransport } from "./transport.ts";
 import { setUpVoice } from "./voice.ts";
 
@@ -138,11 +139,16 @@ function handleMessage(message: ServerMessage) {
     case "status":
       setActivity("working");
       break;
-    case "answer":
-      addMessage("answer", message.text);
+    case "answer": {
+      const item = document.createElement("li");
+      item.className = "message answer";
+      item.append(renderMarkdown(message.text));
+      messageList.append(item);
+      item.scrollIntoView({ block: "end" });
       void notifyIfHidden("Ducky has your answer");
       finishQuestion();
       break;
+    }
     case "error":
       addMessage("error", message.message);
       void notifyIfHidden("Ducky ran into a problem");

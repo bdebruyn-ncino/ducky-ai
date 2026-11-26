@@ -49,6 +49,111 @@ body {
 .message.answer {
   align-self: flex-start;
   background-color: #2e2e34;
+  /* Markdown content manages its own whitespace. */
+  white-space: normal;
+}
+
+/* Markdown prose inside answer messages. */
+.message.answer > * {
+  margin: 0;
+}
+
+.message.answer > * + * {
+  margin-top: 6px;
+}
+
+.message.answer h1,
+.message.answer h2,
+.message.answer h3,
+.message.answer h4,
+.message.answer h5,
+.message.answer h6 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 10px;
+}
+
+.message.answer h1 { font-size: 1.15em; }
+.message.answer h2 { font-size: 1.08em; }
+.message.answer h3,
+.message.answer h4,
+.message.answer h5,
+.message.answer h6 { font-size: 1em; }
+
+.message.answer ul,
+.message.answer ol {
+  padding-left: 1.4em;
+}
+
+.message.answer blockquote {
+  border-left: 3px solid #555;
+  padding-left: 10px;
+  color: #b0b0b8;
+  margin-left: 0;
+}
+
+.message.answer table {
+  border-collapse: collapse;
+  font-size: 0.9em;
+  overflow-x: auto;
+  display: block;
+}
+
+.message.answer th,
+.message.answer td {
+  border: 1px solid #444;
+  padding: 4px 8px;
+}
+
+.message.answer th {
+  background-color: #26262c;
+}
+
+/* Inline code. */
+.message.answer code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.88em;
+  background-color: #26262c;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* Code block wrapper: positions the copy button. */
+.code-block {
+  position: relative;
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background-color: #16161a;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Reset inline code style inside a code block. */
+.code-block pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.85em;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  font-size: 0.75em;
+  background-color: #3a3d48;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.code-block:hover .copy-btn {
+  opacity: 1;
 }
 
 .message.error {
