@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ducky</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="widget">
+      <ol id="messages" class="messages" aria-live="polite"></ol>
+
+      <div id="working" class="working" hidden>
+        <span>Ducky is working...</span>
+        <button id="cancel" type="button">Cancel</button>
+      </div>
+
+      <form id="ask-form" class="ask-form">
+        <input id="question" placeholder="Ask Ducky..." autocomplete="off" autofocus />
+        <button id="ask" type="submit">Ask</button>
+      </form>
+    </main>
+  </body>
+</html>
