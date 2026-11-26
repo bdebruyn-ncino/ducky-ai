@@ -232,3 +232,28 @@ button:disabled {
     transition: none !important;
   }
 }
+
+.message.confirmation {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message.confirmation button {
+  align-self: flex-start;
+  padding: 4px 12px;
+  font-size: 0.85em;
+}
+
+.confirm-approve {
+  background-color: #2e7d32;
+}
+
+.confirm-deny {
+  background-color: #2e2e34;
+}
+
+.confirmation-result {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
