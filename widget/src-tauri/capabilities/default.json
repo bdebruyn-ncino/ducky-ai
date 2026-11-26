@@ -6,6 +6,10 @@
   "permissions": [
     "core:default",
     "core:window:allow-hide",
-    "allow-send-to-sidecar"
+    "core:window:allow-is-visible",
+    "allow-send-to-sidecar",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify"
   ]
 }

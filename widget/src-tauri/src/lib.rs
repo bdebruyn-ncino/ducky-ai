@@ -79,6 +79,7 @@ pub fn run() {
                 })
                 .build(),
         )
+        .plugin(tauri_plugin_notification::init())
         .manage(Sidecar::default())
         .invoke_handler(tauri::generate_handler![send_to_sidecar])
         .setup(move |app| {
