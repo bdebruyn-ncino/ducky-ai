@@ -1,0 +1,110 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 14px;
+  color: #f2f2f2;
+  background-color: #1e1e22;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+}
+
+.widget {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px;
+  gap: 8px;
+}
+
+.messages {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message {
+  max-width: 90%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message.question {
+  align-self: flex-end;
+  background-color: #3a5bd9;
+}
+
+.message.answer {
+  align-self: flex-start;
+  background-color: #2e2e34;
+}
+
+.message.error {
+  align-self: flex-start;
+  background-color: #6b2a2a;
+}
+
+.message.note {
+  align-self: center;
+  color: #a0a0a8;
+  font-size: 12px;
+}
+
+.working {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #a0a0a8;
+  font-size: 12px;
+}
+
+.ask-form {
+  display: flex;
+  gap: 8px;
+}
+
+input,
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+input {
+  flex: 1;
+  background-color: #2e2e34;
+  outline: none;
+}
+
+input:focus {
+  box-shadow: 0 0 0 2px #3a5bd9;
+}
+
+button {
+  background-color: #3a5bd9;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.working button {
+  background-color: #2e2e34;
+  padding: 4px 10px;
+}
