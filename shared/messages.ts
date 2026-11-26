@@ -5,7 +5,8 @@
 export type ClientMessage =
   | { type: "ask"; id: string; question: string; project?: string }
   | { type: "cancel"; id: string }
-  | { type: "confirmation-response"; id: string; confirmationId: string; approved: boolean; choice?: string };
+  | { type: "confirmation-response"; id: string; confirmationId: string; approved: boolean; choice?: string }
+  | { type: "new-session" };
 
 export type ServerMessage =
   | { type: "ready" }
@@ -16,13 +17,14 @@ export type ServerMessage =
   // Asks the user to approve an action, or to pick one of `options` (for example which repo).
   | { type: "confirmation-request"; id: string; confirmationId: string; summary: string; options?: string[] }
   // Nobody answered in time, so the request was denied. The widget can remove its buttons.
-  | { type: "confirmation-expired"; id: string; confirmationId: string };
+  | { type: "confirmation-expired"; id: string; confirmationId: string }
+  | { type: "session-cleared" };
 
 export function encode(message: ClientMessage | ServerMessage): string {
   return JSON.stringify(message) + "\n";
 }
 
-const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired"];
+const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired", "session-cleared"];
 
 const isString = (value: unknown): value is string => typeof value === "string";
 const isOptionalString = (value: unknown) => value === undefined || isString(value);
@@ -44,7 +46,8 @@ export function decodeClientMessage(line: string): ClientMessage {
       isString(value.id) &&
       isString(value.confirmationId) &&
       typeof value.approved === "boolean" &&
-      isOptionalString(value.choice));
+      isOptionalString(value.choice)) ||
+    value.type === "new-session";
 
   if (!isValid) {
     throw new Error(`Not a valid client message: ${line}`);

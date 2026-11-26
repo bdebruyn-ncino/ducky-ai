@@ -47,6 +47,7 @@ const askButton = byId<HTMLButtonElement>("ask");
 const duckButton = byId<HTMLButtonElement>("duck");
 const duck = createDuck(duckButton);
 const modeToggle = byId<HTMLButtonElement>("mode-toggle");
+const newSessionButton = byId<HTMLButtonElement>("new-session");
 
 function addMessage(kind: MessageKind, text: string) {
   const item = document.createElement("li");
@@ -80,6 +81,7 @@ function setActivity(activity: Activity) {
     }
   }
   askButton.disabled = activity === "working" || activity === "waiting";
+  newSessionButton.disabled = activity !== "idle";
   duck.setActivity(activity);
 }
 
@@ -276,6 +278,10 @@ function handleMessage(message: ServerMessage) {
       setActivity("working");
       break;
     }
+    case "session-cleared":
+      messageList.replaceChildren();
+      addMessage("note", "New conversation started.");
+      break;
     case "ready":
       break;
   }
@@ -342,5 +348,9 @@ document.addEventListener("keydown", (event) => {
 
 // The hotkey shows the window, so start typing straight away.
 window.addEventListener("focus", () => questionInput.focus());
+
+newSessionButton.addEventListener("click", () => {
+  transport.send({ type: "new-session" });
+});
 
 transport.onMessage(handleMessage);

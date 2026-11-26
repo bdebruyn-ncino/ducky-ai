@@ -17,6 +17,15 @@ const config = loadConfig();
 const runningQuestions = new Map<string, AbortController>();
 const pendingConfirmations = new Map<string, PendingConfirmation>();
 
+// Keeps the last successful session ID per project so follow-up questions
+// continue the same conversation. Cleared by a "new-session" message.
+// Lives only for this sidecar process — a restart starts fresh automatically.
+const sessionByProject = new Map<string, string>();
+
+// The repo that was last confirmed by the user. Used as the default when a
+// follow-up question doesn't name a repo explicitly. Cleared with new-session.
+let currentRepo: string | undefined;
+
 // stdout carries protocol messages only. Log to stderr.
 function send(message: ServerMessage) {
   process.stdout.write(encode(message));
@@ -94,6 +103,11 @@ async function chooseRepo(id: string, question: string, project: string | undefi
     return choice.repo;
   }
 
+  // Fall back to the last confirmed repo so follow-up questions don't re-ask.
+  if (currentRepo && !project && choice.options.includes(currentRepo)) {
+    return currentRepo;
+  }
+
   const response = await askUser(id, "Which repo do you mean?", choice.options);
   const picked = response?.choice;
   return response?.approved && picked && choice.options.includes(picked) ? picked : undefined;
@@ -112,10 +126,12 @@ async function handleAsk({ id, question, project }: AskMessage) {
 
     // Only now is Ducky actually working; until here it may have been waiting for the user.
     send({ type: "status", id, state: "working" });
-    const result = await runAgent(config, repo, question, abortController, makeOnConfirm(id));
+    const result = await runAgent(config, repo, question, abortController, makeOnConfirm(id), sessionByProject.get(repo));
     if (abortController.signal.aborted) {
       send({ type: "cancelled", id });
     } else if (result.ok) {
+      currentRepo = repo;
+      sessionByProject.set(repo, result.sessionId);
       send({ type: "answer", id, text: result.answer });
     } else {
       send({ type: "error", id, message: result.reason });
@@ -157,6 +173,11 @@ function handle(message: ClientMessage) {
       break;
     case "confirmation-response":
       answerConfirmation(message);
+      break;
+    case "new-session":
+      currentRepo = undefined;
+      sessionByProject.clear();
+      send({ type: "session-cleared" });
       break;
   }
 }

@@ -222,6 +222,12 @@ button:disabled {
   align-items: center;
 }
 
+.bottom-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .link-button {
   align-self: center;
   background: none;
