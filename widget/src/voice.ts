@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { DICTATION_OFF_TOOLTIP } from "./phrases.ts";
 
 const TEXT_ONLY_KEY = "ducky.textOnly";
 
@@ -36,7 +37,7 @@ export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButton
 
   function updateTitle() {
     if (!dictationOn) {
-      duckButton.title = "Dictation is off. Turn it on in System Settings, Keyboard, Dictation.";
+      duckButton.title = DICTATION_OFF_TOOLTIP;
     } else {
       duckButton.title = listening ? "Stop listening" : "Talk to Ducky";
     }
