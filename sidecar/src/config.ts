@@ -4,7 +4,7 @@ export interface DuckyConfig {
   modelArn: string;
   awsProfile: string;
   awsRegion: string;
-  projects: Record<string, string>;
+  reposRoot: string;
 }
 
 const DEFAULT_PATH = new URL("../../ducky.config.json", import.meta.url);
@@ -20,13 +20,10 @@ export function loadConfig(path: string | URL = process.env.DUCKY_CONFIG ?? DEFA
 }
 
 export function parseConfig(value: any): DuckyConfig {
-  for (const field of ["modelArn", "awsProfile", "awsRegion"]) {
+  for (const field of ["modelArn", "awsProfile", "awsRegion", "reposRoot"]) {
     if (typeof value?.[field] !== "string" || value[field] === "") {
       throw new Error(`Config field "${field}" is missing or not a non-empty string.`);
     }
-  }
-  if (typeof value.projects !== "object" || value.projects === null) {
-    throw new Error(`Config field "projects" must map spoken names to repo paths.`);
   }
   return value;
 }

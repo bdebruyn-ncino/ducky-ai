@@ -2,7 +2,5 @@
   "modelArn": "arn:aws:bedrock:<region>:<account-id>:application-inference-profile/<id>",
   "awsProfile": "<your-aws-profile>",
   "awsRegion": "us-east-1",
-  "projects": {
-    "example": "/Users/<you>/Development/Repos/example-repo"
-  }
+  "reposRoot": "/Users/<you>/Development/Repos"
 }

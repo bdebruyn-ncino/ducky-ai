@@ -44,7 +44,7 @@ Nothing environment-specific is hard coded. Settings live in `ducky.config.json`
 
 - `modelArn`: the Bedrock model or inference profile ARN to use
 - `awsProfile` and `awsRegion`
-- `projects`: a map of spoken names to local repo paths
+- `reposRoot`: the folder where you keep your repos. Every git repo directly inside it becomes a project you can name out loud
 
 The example config and the loader arrive with [issue 1](../../issues/1). Never commit your real config, ARNs, account IDs or local paths.
 

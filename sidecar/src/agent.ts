@@ -1,5 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { join } from "node:path";
 import type { DuckyConfig } from "./config.ts";
+import { listRepos, resolveProject } from "./projects.ts";
 
 const READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
 
@@ -17,11 +19,14 @@ function bedrockEnv(config: DuckyConfig) {
 }
 
 export async function runAgent(config: DuckyConfig, project: string, question: string): Promise<AgentResult> {
-  const cwd = config.projects[project];
-  if (!cwd) {
-    const known = Object.keys(config.projects).join(", ");
-    return { ok: false, reason: `Unknown project "${project}". Known projects: ${known}` };
+  const match = resolveProject(project, listRepos(config.reposRoot));
+  if (match.status === "unknown") {
+    return { ok: false, reason: `Unknown project "${project}". Known projects: ${match.known.join(", ")}` };
   }
+  if (match.status === "ambiguous") {
+    return { ok: false, reason: `"${project}" could mean: ${match.matches.join(", ")}. Which one?` };
+  }
+  const cwd = join(config.reposRoot, match.name);
 
   const messages = query({
     prompt: question,
