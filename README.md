@@ -48,11 +48,19 @@ The app starts and stops the sidecar itself (`node --import tsx src/server.ts` i
 
 ### Voice
 
-Click the microphone, speak, and pause. The words appear in the text box as you speak; press Enter to send. Recognition runs on this Mac using macOS's own speech recognition, so no audio leaves the machine.
+Click the duck, speak, and pause. The words appear in the text box as you speak, and about a second after you stop, Ducky counts down two seconds and then sends the question. Recognition runs on this Mac using macOS's own speech recognition, so no audio leaves the machine.
+
+- **During the countdown** you can click the duck or press Esc to stop it and edit the text, start typing to change it, or press Enter to send straight away.
+- **Esc** stops the countdown, then stops listening, then hides the window.
+- **Text only:** the "Text only" link under the box hides the duck and keeps the text box. Your choice is remembered.
+
+Setup notes:
 
 - **Turn on Dictation** in System Settings, Keyboard, Dictation. If it is off, Ducky says so.
 - **Set your language.** Run with `DUCKY_SPEECH_LOCALE` set to the language you dictate in, for example `DUCKY_SPEECH_LOCALE=en-ZA npm run tauri dev`. Without it Ducky uses your system language, and that language may have no on-device speech model (macOS then reports "Siri and Dictation are disabled").
-- **Start the app from a terminal that already has Speech Recognition permission** (System Settings, Privacy & Security, Speech Recognition lists them). macOS asks the app that launched Ducky for permission, not Ducky itself. Starting from VS Code's terminal makes macOS stop the app the first time you click the microphone, because VS Code has no speech usage text. A built app is its own app and should ask for its own permission; that is not tested yet (#17).
+- **Start the app from a terminal that already has Speech Recognition permission** (System Settings, Privacy & Security, Speech Recognition lists them). macOS asks the app that launched Ducky for permission, not Ducky itself. Starting from VS Code's terminal makes macOS stop the app the first time you click the duck, because VS Code has no speech usage text. A built app is its own app and should ask for its own permission; that is not tested yet (#17).
+- **Microphone access** is checked first. If it is off, Ducky says so instead of silently hearing nothing.
+- **Timings:** run with `DUCKY_DEBUG=1` to print how long each step of listening takes.
 
 Limitations for now:
 - Development only. Packaging the sidecar into a release build is not done.

@@ -18,16 +18,16 @@
       </div>
 
       <form id="ask-form" class="ask-form">
-        <input id="question" placeholder="Ask Ducky..." autocomplete="off" autofocus />
-        <button id="mic" type="button" title="Talk to Ducky" aria-label="Talk to Ducky">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="9" y="3" width="6" height="11" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0" />
-            <path d="M12 18v3" />
-          </svg>
+        <button id="duck" type="button" class="duck" title="Talk to Ducky" aria-label="Talk to Ducky">
+          <span class="duck-figure">
+            <img class="duck-image" src="/src/assets/duck.svg" width="52" height="52" alt="" draggable="false" />
+          </span>
         </button>
+        <input id="question" placeholder="Ask Ducky..." autocomplete="off" autofocus />
         <button id="ask" type="submit">Ask</button>
       </form>
+
+      <button id="mode-toggle" type="button" class="link-button">Text only</button>
     </main>
   </body>
 </html>
