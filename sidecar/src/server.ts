@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { decodeClientMessage, encode, type ClientMessage, type HistoryKind, type ServerMessage } from "../../shared/messages.ts";
 import { runAgent } from "./agent.ts";
@@ -6,6 +7,7 @@ import { configFromDb, loadConfigFromJson, type DuckyConfig } from "./config.ts"
 import { addHistory, clearHistory, openDb, readHistory, readProjects, readSettings, writeProjects, writeSettings } from "./db.ts";
 import { findRepoInText, listRepos, resolveProject } from "./projects.ts";
 import { runSetup } from "./setup.ts";
+import { describePreApproved, findPreApprovedRules, projectSettingsFiles, userSettingsFiles } from "./settings-check.ts";
 import { chooseDefaults, detectReposRoot, readLegacyConfig } from "./setup-defaults.ts";
 
 type AskMessage = Extract<ClientMessage, { type: "ask" }>;
@@ -66,6 +68,20 @@ function getRepos(): string[] {
     return listRepos(config.reposRoot);
   }
   return [];
+}
+
+// Once per place (the user's settings, or one repo's), say if Claude settings pre-approve tools, since that skips the approval step.
+const warnedAboutPreApproved = new Set<string>();
+function warnIfPreApproved(key: string, files: string[], where: string) {
+  if (warnedAboutPreApproved.has(key)) {
+    return;
+  }
+  warnedAboutPreApproved.add(key);
+  const note = describePreApproved(findPreApprovedRules(files), where);
+  if (note) {
+    console.error(`[settings] ${note}`);
+    send({ type: "note", text: note });
+  }
 }
 
 function pickRepo(question: string, project: string | undefined, repos: string[]): { repo: string } | { options: string[] } {
@@ -185,6 +201,7 @@ async function handleAsk({ id, question, project }: AskMessage) {
       return;
     }
     record("question", question, repo);
+    warnIfPreApproved(repo, projectSettingsFiles(join(config!.reposRoot, repo)), `the ${repo} repo's Claude settings`);
 
     // Only now is Ducky actually working; until here it may have been waiting for the user.
     send({ type: "status", id, state: "working" });
@@ -205,7 +222,9 @@ async function handleAsk({ id, question, project }: AskMessage) {
 
     // How long the agent took, including any time spent waiting for the user to approve something.
     const durationMs = Date.now() - startedAt;
-    console.error(`[ask] ${chosenRepo}: ${result.ok ? "answered" : "failed"} in ${(durationMs / 1000).toFixed(1)}s`);
+    // The cost is the SDK's own estimate in US dollars, not a bill.
+    const spent = result.costUsd !== undefined ? `, ${result.turns} turns, about $${result.costUsd.toFixed(3)}` : "";
+    console.error(`[ask] ${chosenRepo}: ${result.ok ? "answered" : "failed"} in ${(durationMs / 1000).toFixed(1)}s${spent}`);
     if (abortController.signal.aborted) {
       record("cancelled", "Cancelled", chosenRepo, durationMs);
       send({ type: "cancelled", id });
@@ -358,6 +377,7 @@ function handle(message: ClientMessage) {
       send({ type: "history", entries: [] });
       break;
     case "widget-ready":
+      warnIfPreApproved("user", userSettingsFiles(), "your Claude settings");
       // The widget can only hear us from now on, so this is the moment first-run setup can begin.
       if (setupInProgress) {
         resendSetupStep();

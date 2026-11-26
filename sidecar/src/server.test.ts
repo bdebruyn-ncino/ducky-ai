@@ -32,7 +32,8 @@ after(() => rmSync(workDir, { recursive: true, force: true }));
 function startSidecar(extraEnv: Record<string, string> = {}) {
   const child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
     cwd: sidecarDir,
-    env: { ...process.env, DUCKY_CONFIG: configPath, ...extraEnv },
+    // HOME is a throwaway folder, so the tests never read the developer's own Claude or AWS settings.
+    env: { ...process.env, HOME: workDir, DUCKY_CONFIG: configPath, ...extraEnv },
     stdio: ["pipe", "pipe", "inherit"],
   });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
@@ -123,7 +124,13 @@ test("new-session clears the repo memory so the next question asks again", timeo
     // The question now runs (and will time-out / fail in the test env — that's fine,
     // we just need to cancel before waiting for a real agent answer).
     sidecar.send({ type: "cancel", id: "q1" });
-    await sidecar.next(); // cancelled
+    // The question may say "working" before it hears the cancel, so read until it says "cancelled".
+    for (;;) {
+      const message = await sidecar.next();
+      if (message.type === "cancelled") {
+        break;
+      }
+    }
 
     // Clear the session.
     sidecar.send({ type: "new-session" });
@@ -291,6 +298,42 @@ test("history from before a restart is still there, and can be cleared", timeout
 
     sidecar.send({ type: "history-request" });
     assert.deepEqual(await sidecar.next(), { type: "history", entries: [] });
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("the user is told when their Claude settings pre-approve tools", timeout, async () => {
+  const home = join(workDir, "home-with-rules");
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(
+    join(home, ".claude", "settings.json"),
+    JSON.stringify({ permissions: { allow: ["Bash(git status)", "Edit"] } }),
+  );
+
+  const sidecar = startSidecar({ HOME: home });
+  try {
+    await sidecar.next(); // ready
+    sidecar.send({ type: "widget-ready" });
+
+    const note = await sidecar.next();
+    assert.equal(note.type, "note");
+    if (note.type === "note") {
+      assert.match(note.text, /pre-approves 2 tool rules \(Bash\(git status\), Edit\)/);
+    }
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("a user with no pre-approved tools is not bothered", timeout, async () => {
+  const sidecar = startSidecar();
+  try {
+    await sidecar.next(); // ready
+    sidecar.send({ type: "widget-ready" });
+    // With a saved config and nothing to warn about, the next thing is whatever we ask for.
+    sidecar.send({ type: "history-request" });
+    assert.equal((await sidecar.next()).type, "history");
   } finally {
     sidecar.stop();
   }

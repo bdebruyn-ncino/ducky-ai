@@ -12,9 +12,24 @@ const READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
 // requires explicit user confirmation before it runs.
 const READ_ONLY_TOOL_SET = new Set([...READ_ONLY_TOOLS, ...ATLASSIAN_READ_TOOLS, ...GITHUB_READ_TOOLS]);
 
+// One question may not cost more than this (an estimate in US dollars). A runaway loop of tool calls stops here.
+export const MAX_QUESTION_COST_USD = Number(process.env.DUCKY_MAX_COST_USD) || 1;
+
 export type AgentResult =
-  | { ok: true; answer: string; sessionId: string }
-  | { ok: false; reason: string };
+  | { ok: true; answer: string; sessionId: string; costUsd: number; turns: number }
+  | { ok: false; reason: string; costUsd?: number; turns?: number };
+
+// What to tell the user when the agent stops without an answer.
+export function explainFailure(subtype: string, maxCostUsd = MAX_QUESTION_COST_USD): string {
+  switch (subtype) {
+    case "error_max_budget_usd":
+      return `That question reached its spending cap ($${maxCostUsd.toFixed(2)}), so Ducky stopped. Try a narrower question.`;
+    case "error_max_turns":
+      return "Ducky took too many steps on that question and stopped. Try a narrower question.";
+    default:
+      return subtype;
+  }
+}
 
 function bedrockEnv(config: DuckyConfig) {
   return {
@@ -87,6 +102,8 @@ export async function runAgent(
       mcpServersDelivery: "initialize",
       // "user" picks up MCP servers the user has configured globally in Claude Code.
       settingSources: ["user", "project"],
+      // The user's personal hooks are shell commands that would run during Ducky's questions, outside its control.
+      settings: { disableAllHooks: true },
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
@@ -94,6 +111,7 @@ export async function runAgent(
       },
       env: bedrockEnv(config),
       abortController,
+      maxBudgetUsd: MAX_QUESTION_COST_USD,
     },
   });
 
@@ -109,8 +127,8 @@ export async function runAgent(
     if (message.type !== "result") continue;
 
     return message.subtype === "success"
-      ? { ok: true, answer: message.result, sessionId: message.session_id }
-      : { ok: false, reason: message.subtype };
+      ? { ok: true, answer: message.result, sessionId: message.session_id, costUsd: message.total_cost_usd, turns: message.num_turns }
+      : { ok: false, reason: explainFailure(message.subtype), costUsd: message.total_cost_usd, turns: message.num_turns };
   }
   return { ok: false, reason: "The agent ended without a result." };
 }

@@ -8,7 +8,7 @@ Evidence for the Stage 1 targets. Fill this in while using Ducky for real work.
 - **2 colleagues each complete 3 tasks** end to end (6 in total).
 
 ## Before you start
-- Run `cd widget && npm run tauri dev` from a terminal that has Speech Recognition permission. Keep that terminal visible: each answer prints a line like `[ask] aws-autospread: answered in 14.2s` (the agent's time, including any approval waits). The same time is saved in History, so you can also read it there afterwards.
+- Run `cd widget && npm run tauri dev` from a terminal that has Speech Recognition permission. Keep that terminal visible: each answer prints a line like `[ask] aws-autospread: answered in 14.2s, 6 turns, about $0.082` (the cost is the SDK's own estimate) (the agent's time, including any approval waits). The same time is saved in History, so you can also read it there afterwards.
 - Have a stopwatch (phone is fine).
 
 ## For each task
@@ -30,14 +30,14 @@ Use real questions from your own work if you can. These are safe starters:
 
 ## Results
 
-| # | By hand (s) | Ducky total (s) | Ducky `[ask]` (s) | Right? (yes / partly / no) | What was corrected or re-asked | Confusing? |
-|---|---|---|---|---|---|---|
-| 1 | | | | | | |
-| 2 | | | | | | |
-| 3 | | | | | | |
-| 4 | | | | | | |
-| 5 | | | | | | |
-| 6 | | | | | | |
+| # | By hand (s) | Ducky total (s) | Ducky `[ask]` (s) | Cost (US$) | Right? (yes / partly / no) | What was corrected or re-asked | Confusing? |
+|---|---|---|---|---|---|---|---|
+| 1 | | | | | | | |
+| 2 | | | | | | | |
+| 3 | | | | | | | |
+| 4 | | | | | | | |
+| 5 | | | | | | | |
+| 6 | | | | | | | |
 
 Tester: ______________  Date: ______________  Voice or typed: ______________
 
@@ -47,6 +47,7 @@ Tester: ______________  Date: ______________  Voice or typed: ______________
 - Answers right: ____ of ____. Partly right: ____. Wrong: ____.
 - Things the tester corrected: ______________________________________
 - Things that confused the tester: ___________________________________
+- Median cost per question: US$ ____ (this feeds [STAGE-3-COMMERCIALS.md](STAGE-3-COMMERCIALS.md), which already has four code questions measured at a median of about $0.05 and 16 seconds; the trial should add Jira, GitHub and follow-up questions).
 - Honest limits: number of testers ____, what kind of questions, anything that made the numbers unrepresentative.
 
 ## Check once before the demo
