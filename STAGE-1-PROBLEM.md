@@ -1,6 +1,6 @@
 # Ducky AI: Stage 1, Define the Problem
 
-> DRAFT. Items marked **[TODO]** need real numbers or facts from Brandon. Do not invent them.
+> Status: ready for review. Timing figures are rough estimates until they are measured in the trial.
 
 ## 1. Problem clarity and specificity
 
@@ -21,8 +21,8 @@
 - Lookups take noticeably longer when the answer is not documented anywhere.
 - Brandon keeps a personal notes vault (an index of how-tos and gotchas) to cover the missing documentation. His teammates have no such index.
 - Workload: roughly 1 to 2 tickets a day, or a single ticket on a day with a big one. Each ticket can mean a switch of repo and context.
-- **[TODO]** Exact numbers: we don't have timings yet. Time a few lookups of undocumented things during the trial.
-- Honest limits: this is one user, so the evidence is anecdotal. The tool itself is not specific to Brandon, since anyone on the team can use it. **[TODO]** Get 1 or 2 colleagues to try it.
+- Time (estimate): finding something that is not in the notes index takes a few minutes, because it costs one or more MCP calls to Jira. We have not timed it yet. We will measure it during the trial.
+- Honest limits: this is one user, so the evidence is anecdotal. The tool itself is not specific to Brandon, since anyone on the team can use it. Clinton will trial it, and more testers are to be recruited.
 
 ## 3. Opportunity and "why now"
 
@@ -30,14 +30,14 @@
 - **Agents can use tools.** The Claude Agent SDK can read a repo and call Jira and GitHub through MCP connectors, so the duck can look things up for you.
 - **Our models are already on Bedrock.** There is no new vendor or data-sharing approval needed for the core flow.
 - **Existing alternative:** developers on the team already work with Claude Code. It is powerful but needs a terminal, the right working directory and typing. It can't be reached from anywhere with one hotkey, doesn't take a spoken request, and doesn't map "the autospread repo" to a folder. Ducky aims to be a voice-first front door to that, not a replacement.
-- **Cost of the status quo:** **[TODO]** (lookups per day) × (minutes per lookup) × (working days per week).
+- **Cost of the status quo (estimate):** about 1 to 2 undocumented lookups per ticket-day at a few minutes each (call it 3 to 5) comes to roughly 30 to 50 minutes a week per developer. The time saved is modest per person. The bigger cost is the break in focus and the risk of a wrong answer when nothing is documented. We will replace this estimate with measured figures after the trial.
 
 ## 4. Success definition
 
 **Measurable outcomes (targets to confirm after a trial):**
-- Ask a spoken question about a repo or Jira ticket and get an answer in under **[TODO] seconds**.
-- A real user (not only Brandon) completes **[TODO] n** tasks end to end.
-- **[TODO]** Time per lookup is lower than doing it by hand.
+- Ask a spoken question about a repo or Jira ticket and get an answer in under **60 seconds**.
+- At least 2 colleagues (starting with Clinton) each complete 3 tasks end to end, 6 in total.
+- Time per undocumented lookup is at least halved against the measured baseline.
 
 **In scope**
 - macOS menu-bar widget with a hotkey and text box (dictation via Wispr Flow).
