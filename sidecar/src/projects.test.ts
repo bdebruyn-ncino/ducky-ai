@@ -29,6 +29,20 @@ test("a tie between equally close repos is ambiguous", () => {
   });
 });
 
+test("a short name that matches many repos lists them all", () => {
+  assert.deepEqual(resolveProject("aws", repos), {
+    status: "ambiguous",
+    matches: ["aws-autospread", "aws-autospread-parallel", "aws-doc-extraction"],
+  });
+});
+
+test("a short name that is only part of several repos is ambiguous", () => {
+  assert.deepEqual(resolveProject("ai", ["ducky-ai", "aws-ai-platform-models"]), {
+    status: "ambiguous",
+    matches: ["ducky-ai", "aws-ai-platform-models"],
+  });
+});
+
 test("an unknown name lists the known repos", () => {
   assert.deepEqual(resolveProject("banana", repos), { status: "unknown", known: repos });
 });
