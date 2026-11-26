@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { decodeClientMessage, encode, type ClientMessage, type ServerMessage } from "../../shared/messages.ts";
 import { runAgent } from "./agent.ts";
-import { loadConfig } from "./config.ts";
+import { configFromDb, loadConfigFromJson, type DuckyConfig } from "./config.ts";
+import { openDb, readProjects, readSettings, writeProjects, writeSettings } from "./db.ts";
 import { findRepoInText, listRepos, resolveProject } from "./projects.ts";
+import { runSetup } from "./setup.ts";
 
 type AskMessage = Extract<ClientMessage, { type: "ask" }>;
 type ConfirmationResponse = Extract<ClientMessage, { type: "confirmation-response" }>;
@@ -13,7 +15,15 @@ interface PendingConfirmation {
   resolve: (response: ConfirmationResponse | undefined) => void;
 }
 
-const config = loadConfig();
+// When DUCKY_CONFIG is set (dev/testing) we skip the database entirely.
+const db = process.env.DUCKY_CONFIG ? null : openDb();
+
+let config: DuckyConfig | null = process.env.DUCKY_CONFIG ? loadConfigFromJson() : (db ? configFromDb(readSettings(db)!) : null);
+// If DB had no settings, config is null and we'll start the setup flow.
+if (db && !readSettings(db)) {
+  config = null;
+}
+
 const runningQuestions = new Map<string, AbortController>();
 const pendingConfirmations = new Map<string, PendingConfirmation>();
 
@@ -26,6 +36,11 @@ const sessionByProject = new Map<string, string>();
 // follow-up question doesn't name a repo explicitly. Cleared with new-session.
 let currentRepo: string | undefined;
 
+// A single pending free-text setup response. Only one setup prompt is in
+// flight at a time, so a single slot is sufficient.
+let pendingSetupResolve: ((value: string | null) => void) | undefined;
+let setupInProgress = false;
+
 // stdout carries protocol messages only. Log to stderr.
 function send(message: ServerMessage) {
   process.stdout.write(encode(message));
@@ -33,6 +48,20 @@ function send(message: ServerMessage) {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Returns the list of known repo names, preferring the DB projects table. */
+function getRepos(): string[] {
+  if (db) {
+    const projects = readProjects(db);
+    if (projects.length > 0) {
+      return projects.map((p) => p.name);
+    }
+  }
+  if (config?.reposRoot) {
+    return listRepos(config.reposRoot);
+  }
+  return [];
 }
 
 function pickRepo(question: string, project: string | undefined, repos: string[]): { repo: string } | { options: string[] } {
@@ -98,7 +127,8 @@ function makeOnConfirm(questionId: string) {
 
 // Returns the repo to run in, or undefined when the user cancelled.
 async function chooseRepo(id: string, question: string, project: string | undefined): Promise<string | undefined> {
-  const choice = pickRepo(question, project, listRepos(config.reposRoot));
+  const repos = getRepos();
+  const choice = pickRepo(question, project, repos);
   if ("repo" in choice) {
     return choice.repo;
   }
@@ -126,7 +156,7 @@ async function handleAsk({ id, question, project }: AskMessage) {
 
     // Only now is Ducky actually working; until here it may have been waiting for the user.
     send({ type: "status", id, state: "working" });
-    const result = await runAgent(config, repo, question, abortController, makeOnConfirm(id), sessionByProject.get(repo));
+    const result = await runAgent(config!, repo, question, abortController, makeOnConfirm(id), sessionByProject.get(repo));
     if (abortController.signal.aborted) {
       send({ type: "cancelled", id });
     } else if (result.ok) {
@@ -162,17 +192,85 @@ function answerConfirmation(response: ConfirmationResponse) {
   }
 }
 
+/** Sends a free-text prompt and returns a promise that resolves when the user answers. */
+function askSetupText(id: string, prompt: string, placeholder?: string): Promise<string | null> {
+  send({ type: "setup-prompt", id, prompt, placeholder });
+  return new Promise<string | null>((resolve) => {
+    const timer = setTimeout(() => {
+      if (pendingSetupResolve === resolve) {
+        pendingSetupResolve = undefined;
+      }
+      resolve(null);
+    }, CONFIRMATION_TIMEOUT_MS);
+
+    pendingSetupResolve = (value) => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+  });
+}
+
+/** Wraps askUser to return the chosen option string (or null on cancel). */
+async function askSetupChoice(id: string, summary: string, options: string[]): Promise<string | null> {
+  const response = await askUser(id, summary, options);
+  return response?.approved && response.choice ? response.choice : null;
+}
+
+async function startSetup() {
+  if (setupInProgress) {
+    return;
+  }
+  setupInProgress = true;
+
+  const result = await runSetup(
+    askSetupText,
+    askSetupChoice,
+    (text) => send({ type: "note", text }),
+  );
+
+  if (result && db) {
+    writeSettings(db, result.settings);
+    writeProjects(db, result.projects);
+    config = configFromDb(result.settings);
+    send({ type: "answer", id: "setup", text: "✅ Setup complete! Ask me anything about your repos." });
+  } else if (!result) {
+    send({ type: "note", text: "Setup was cancelled. Click **Setup** to try again." });
+  }
+
+  setupInProgress = false;
+}
+
 function handle(message: ClientMessage) {
   switch (message.type) {
     case "ask":
+      if (!config) {
+        send({ type: "error", id: message.id, message: "Setup required. Click Setup to configure Ducky." });
+        return;
+      }
       // Not awaited, so several questions can run at once.
       void handleAsk(message);
       break;
     case "cancel":
       cancelQuestion(message.id);
+      // Also cancel any pending setup text prompt.
+      if (pendingSetupResolve) {
+        const resolve = pendingSetupResolve;
+        pendingSetupResolve = undefined;
+        resolve(null);
+      }
       break;
     case "confirmation-response":
       answerConfirmation(message);
+      break;
+    case "setup-response":
+      if (pendingSetupResolve) {
+        const resolve = pendingSetupResolve;
+        pendingSetupResolve = undefined;
+        resolve(message.value);
+      }
+      break;
+    case "run-setup":
+      void startSetup();
       break;
     case "new-session":
       currentRepo = undefined;
@@ -183,6 +281,11 @@ function handle(message: ClientMessage) {
 }
 
 send({ type: "ready" });
+
+// If there is no config on first run, kick off setup immediately.
+if (!config) {
+  void startSetup();
+}
 
 for await (const line of createInterface({ input: process.stdin })) {
   if (!line.trim()) {

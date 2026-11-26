@@ -6,7 +6,11 @@ export type ClientMessage =
   | { type: "ask"; id: string; question: string; project?: string }
   | { type: "cancel"; id: string }
   | { type: "confirmation-response"; id: string; confirmationId: string; approved: boolean; choice?: string }
-  | { type: "new-session" };
+  | { type: "new-session" }
+  // User's answer to a free-text setup prompt.
+  | { type: "setup-response"; id: string; value: string }
+  // User clicked the Setup button to (re-)run first-time setup.
+  | { type: "run-setup" };
 
 export type ServerMessage =
   | { type: "ready" }
@@ -18,13 +22,17 @@ export type ServerMessage =
   | { type: "confirmation-request"; id: string; confirmationId: string; summary: string; options?: string[] }
   // Nobody answered in time, so the request was denied. The widget can remove its buttons.
   | { type: "confirmation-expired"; id: string; confirmationId: string }
-  | { type: "session-cleared" };
+  | { type: "session-cleared" }
+  // A setup step that needs free-text input from the user.
+  | { type: "setup-prompt"; id: string; prompt: string; placeholder?: string }
+  // An informational note with no user input required (used by setup for status updates).
+  | { type: "note"; text: string };
 
 export function encode(message: ClientMessage | ServerMessage): string {
   return JSON.stringify(message) + "\n";
 }
 
-const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired", "session-cleared"];
+const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired", "session-cleared", "setup-prompt", "note"];
 
 const isString = (value: unknown): value is string => typeof value === "string";
 const isOptionalString = (value: unknown) => value === undefined || isString(value);
@@ -47,7 +55,9 @@ export function decodeClientMessage(line: string): ClientMessage {
       isString(value.confirmationId) &&
       typeof value.approved === "boolean" &&
       isOptionalString(value.choice)) ||
-    value.type === "new-session";
+    value.type === "new-session" ||
+    (value.type === "setup-response" && isString(value.id) && isString(value.value)) ||
+    value.type === "run-setup";
 
   if (!isValid) {
     throw new Error(`Not a valid client message: ${line}`);

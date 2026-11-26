@@ -1,5 +1,6 @@
 import { runAgent } from "./agent.ts";
-import { loadConfig } from "./config.ts";
+import { configFromDb, loadConfigFromJson } from "./config.ts";
+import { openDb, readSettings } from "./db.ts";
 
 const [project, question] = process.argv.slice(2);
 if (!project || !question) {
@@ -7,7 +8,21 @@ if (!project || !question) {
   process.exit(1);
 }
 
-const result = await runAgent(loadConfig(), project, question);
+// Prefer JSON config (DUCKY_CONFIG env var), then fall back to the SQLite DB.
+const config =
+  loadConfigFromJson() ??
+  (() => {
+    const db = openDb();
+    const settings = readSettings(db);
+    db.close();
+    if (!settings) {
+      console.error("No configuration found. Run the sidecar and complete first-time setup.");
+      process.exit(1);
+    }
+    return configFromDb(settings);
+  })();
+
+const result = await runAgent(config, project, question);
 if (result.ok) {
   console.log(result.answer);
 } else {
