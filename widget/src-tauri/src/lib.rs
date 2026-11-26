@@ -1,8 +1,11 @@
+mod sidecar;
+
+use sidecar::Sidecar;
 use tauri::{
+    AppHandle, Manager, RunEvent,
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -57,6 +60,11 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[tauri::command]
+fn send_to_sidecar(sidecar: tauri::State<Sidecar>, line: String) -> Result<(), String> {
+    sidecar.send(&line)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let hotkey = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyD);
@@ -71,6 +79,8 @@ pub fn run() {
                 })
                 .build(),
         )
+        .manage(Sidecar::default())
+        .invoke_handler(tauri::generate_handler![send_to_sidecar])
         .setup(move |app| {
             // Menu-bar only: no Dock icon.
             #[cfg(target_os = "macos")]
@@ -80,8 +90,15 @@ pub fn run() {
             if let Err(error) = app.global_shortcut().register(hotkey) {
                 eprintln!("Could not register the hotkey: {error}");
             }
-            build_tray(app)
+            build_tray(app)?;
+            sidecar::supervise(app.handle().clone());
+            Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                app.state::<Sidecar>().shutdown();
+            }
+        });
 }

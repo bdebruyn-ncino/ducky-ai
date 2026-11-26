@@ -37,6 +37,20 @@ The widget starts the sidecar (`npm run serve` in `sidecar/`) and talks to it ov
 
 Every message about a question carries the `id` the widget gave it, so several questions can run at once.
 
+## Running in development
+
+1. Create `ducky.config.json` (see Configuration) and sign in to AWS (`aws sso login --profile <profile>`).
+2. `cd sidecar && npm install`
+3. `cd widget && npm install && npm run tauri dev`
+4. Press `Control+Option+D`, or click the duck in the menu bar, and ask a question.
+
+The app starts and stops the sidecar itself (`node --import tsx src/server.ts` in `sidecar/`). Rust owns the process: the webview can only call one command, `send_to_sidecar`, and listen for `sidecar-message` events. If the sidecar crashes it is restarted once; if it keeps stopping, the widget shows an error.
+
+Limitations for now:
+- Development only. Packaging the sidecar into a release build is not done.
+- Node must be on the `PATH` of the terminal you start it from. Launching from Finder will not see your shell's `PATH`.
+- A question in flight is lost if the sidecar crashes.
+
 ## Scope
 
 In scope:

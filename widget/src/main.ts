@@ -1,10 +1,11 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ServerMessage } from "../../shared/messages.ts";
-import { createMockTransport } from "./transport.ts";
+import { createTransport } from "./transport.ts";
 
 type MessageKind = "question" | "answer" | "error" | "note";
+type Activity = "idle" | "working" | "waiting";
 
-const transport = createMockTransport();
+const transport = createTransport();
 let activeQuestionId: string | undefined;
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -17,6 +18,7 @@ function byId<T extends HTMLElement>(id: string): T {
 
 const messageList = byId<HTMLOListElement>("messages");
 const workingBar = byId<HTMLDivElement>("working");
+const workingText = byId<HTMLSpanElement>("working-text");
 const cancelButton = byId<HTMLButtonElement>("cancel");
 const form = byId<HTMLFormElement>("ask-form");
 const questionInput = byId<HTMLInputElement>("question");
@@ -31,21 +33,22 @@ function addMessage(kind: MessageKind, text: string) {
   item.scrollIntoView({ block: "end" });
 }
 
-function setWorking(isWorking: boolean) {
-  workingBar.hidden = !isWorking;
-  askButton.disabled = isWorking;
+function setActivity(activity: Activity) {
+  workingBar.hidden = activity === "idle";
+  workingText.textContent = activity === "waiting" ? "Ducky needs your answer" : "Ducky is working...";
+  askButton.disabled = activity !== "idle";
 }
 
 function finishQuestion() {
   activeQuestionId = undefined;
-  setWorking(false);
+  setActivity("idle");
   questionInput.focus();
 }
 
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case "status":
-      setWorking(true);
+      setActivity("working");
       break;
     case "answer":
       addMessage("answer", message.text);
@@ -62,6 +65,7 @@ function handleMessage(message: ServerMessage) {
     case "confirmation-request":
       // The approve and choose buttons arrive with #9.
       addMessage("note", `Needs your input: ${message.summary}`);
+      setActivity("waiting");
       break;
     case "ready":
       break;
@@ -78,6 +82,7 @@ form.addEventListener("submit", (event) => {
   activeQuestionId = crypto.randomUUID();
   addMessage("question", question);
   questionInput.value = "";
+  setActivity("working");
   transport.send({ type: "ask", id: activeQuestionId, question });
 });
 

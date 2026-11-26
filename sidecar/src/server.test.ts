@@ -80,7 +80,7 @@ test("a question that names no repo asks the user to pick one", timeout, async (
     await sidecar.next();
     sidecar.send({ type: "ask", id: "q1", question: "hello there" });
 
-    assert.deepEqual(await sidecar.next(), { type: "status", id: "q1", state: "working" });
+    // The first reply is the question to the user: Ducky is waiting, not working.
     const request = await sidecar.next();
     assert.equal(request.type, "confirmation-request");
     if (request.type === "confirmation-request") {
@@ -96,7 +96,6 @@ test("denying the repo choice cancels the question", timeout, async () => {
   try {
     await sidecar.next();
     sidecar.send({ type: "ask", id: "q1", question: "hello there" });
-    await sidecar.next();
     const request = await sidecar.next();
     if (request.type !== "confirmation-request") {
       assert.fail("expected a confirmation request");
@@ -114,7 +113,6 @@ test("cancel ends a question that is waiting for the user", timeout, async () =>
   try {
     await sidecar.next();
     sidecar.send({ type: "ask", id: "q1", project: "banana", question: "hello" });
-    await sidecar.next();
     await sidecar.next();
 
     sidecar.send({ type: "cancel", id: "q1" });
