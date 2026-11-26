@@ -4,6 +4,18 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import type { ServerMessage } from "../../shared/messages.ts";
 import { createDuck } from "./duck.ts";
 import { renderMarkdown } from "./markdown.ts";
+import {
+  CANCELLED_NOTE,
+  IDLE_PLACEHOLDER,
+  LISTENING_PLACEHOLDER,
+  NOTIFICATION_ANSWER,
+  NOTIFICATION_ERROR,
+  NOTIFICATION_WAITING,
+  pickPhrase,
+  SENDING_TEXT,
+  WAITING_PHRASES,
+  WORKING_PHRASES,
+} from "./phrases.ts";
 import { createTransport } from "./transport.ts";
 import { setUpVoice } from "./voice.ts";
 
@@ -45,9 +57,28 @@ function addMessage(kind: MessageKind, text: string) {
   item.scrollIntoView({ block: "end" });
 }
 
+// While Ducky works, the joke changes now and then so the line does not go stale.
+const WORKING_PHRASE_MS = 4000;
+let currentActivity: Activity = "idle";
+let phraseTimer: number | undefined;
+
+function showPhrase(phrases: string[]) {
+  workingText.textContent = pickPhrase(phrases, workingText.textContent ?? undefined);
+}
+
 function setActivity(activity: Activity) {
+  const changed = activity !== currentActivity;
+  currentActivity = activity;
   workingBar.hidden = activity === "idle";
-  workingText.textContent = activity === "waiting" ? "Ducky needs your answer" : "Ducky is working...";
+  if (changed) {
+    window.clearInterval(phraseTimer);
+    if (activity === "working") {
+      showPhrase(WORKING_PHRASES);
+      phraseTimer = window.setInterval(() => showPhrase(WORKING_PHRASES), WORKING_PHRASE_MS);
+    } else if (activity === "waiting") {
+      showPhrase(WAITING_PHRASES);
+    }
+  }
   askButton.disabled = activity === "working" || activity === "waiting";
   duck.setActivity(activity);
 }
@@ -74,7 +105,7 @@ function sendQuestion(question: string) {
 
 function showCountdown(secondsLeft: number) {
   setActivity("sending");
-  workingText.textContent = `Sending in ${secondsLeft}... click the duck or press Esc to edit`;
+  workingText.textContent = `${SENDING_TEXT} ${secondsLeft}... click the duck or press Esc to edit`;
 }
 
 function stopCountdownTimer() {
@@ -148,19 +179,19 @@ function handleMessage(message: ServerMessage) {
       item.append(renderMarkdown(message.text));
       messageList.append(item);
       item.scrollIntoView({ block: "end" });
-      void notifyIfHidden("Ducky has your answer");
+      void notifyIfHidden(NOTIFICATION_ANSWER);
       finishQuestion();
       duck.react("done");
       break;
     }
     case "error":
       addMessage("error", message.message);
-      void notifyIfHidden("Ducky ran into a problem");
+      void notifyIfHidden(NOTIFICATION_ERROR);
       finishQuestion();
       duck.react("error");
       break;
     case "cancelled":
-      addMessage("note", "Cancelled.");
+      addMessage("note", CANCELLED_NOTE);
       finishQuestion();
       duck.react("cancelled");
       break;
@@ -227,7 +258,7 @@ function handleMessage(message: ServerMessage) {
       messageList.append(item);
       item.scrollIntoView({ block: "end" });
       setActivity("waiting");
-      void notifyIfHidden("Ducky needs your answer");
+      void notifyIfHidden(NOTIFICATION_WAITING);
       break;
     }
     case "confirmation-expired": {
@@ -266,7 +297,7 @@ const voice = setUpVoice(duckButton, modeToggle, {
   onDictationChanged: (isOn) => duck.setVoiceAvailable(isOn),
   onListeningChanged: (isListening) => {
     duck.setListening(isListening);
-    questionInput.placeholder = isListening ? "Listening..." : "Ask Ducky...";
+    questionInput.placeholder = isListening ? LISTENING_PLACEHOLDER : IDLE_PLACEHOLDER;
   },
   onDuckClick: cancelCountdown,
 });
