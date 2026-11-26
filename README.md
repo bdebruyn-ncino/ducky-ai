@@ -4,7 +4,7 @@ A rubber duck for your Mac that can read your code and tickets.
 
 Press a hotkey, say or type a question, and Ducky answers by looking at the right repo, Jira and GitHub. It's rubber duck debugging, except the duck can look things up.
 
-> Status: hackathon project, in active development. See [STAGE-1-PROBLEM.md](STAGE-1-PROBLEM.md) for the problem we're solving and the [stage-2 issues](../../issues?q=is%3Aissue+label%3Astage-2) for the build plan.
+> Status: hackathon project. See [STAGE-1-PROBLEM.md](STAGE-1-PROBLEM.md) for the problem we're solving, [STAGE-2-SOLUTION.md](STAGE-2-SOLUTION.md) for what we built and why, and [TRIAL.md](TRIAL.md) for the trial sheet.
 
 ## How it works
 
@@ -78,6 +78,12 @@ Ducky never changes anything without your yes. Read-only tools (reading files, s
 - When Ducky is not sure which repo you mean, the same mechanism shows one button per repo.
 - Every decision is logged to the terminal as `[confirmation] approved: ...`, `denied`, `timed out, denied` and so on.
 - The gate is the SDK's `canUseTool`, which is skipped for anything your own Claude settings already allow. Ducky also reads your global Claude settings, so a broad `allow` rule there would let a tool run without asking. #27 covers hardening this.
+
+## History
+
+Click **History** in the footer to see what happened: your questions, the answers, what Ducky looked at along the way ("Reading README.md"), the approvals you gave or denied, and how long each answer took. While Ducky works, the same "what it is doing" line shows under the status.
+
+History is stored in the local database next to your settings (`~/Library/Application Support/ducky-ai/ducky.db`). It is never sent anywhere, it keeps the latest 500 entries, and the **Clear** button (two clicks) deletes it. It contains your questions and the answers, so treat it like shell history.
 
 ## Scope
 

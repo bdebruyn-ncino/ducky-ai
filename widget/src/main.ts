@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { ServerMessage } from "../../shared/messages.ts";
 import { createDuck } from "./duck.ts";
+import { renderHistory } from "./history.ts";
 import { startsTyping } from "./keys.ts";
 import { renderMarkdown } from "./markdown.ts";
 import {
@@ -70,6 +71,11 @@ const typeToggle = byId<HTMLButtonElement>("type-toggle");
 const modeToggle = byId<HTMLButtonElement>("mode-toggle");
 const newSessionButton = byId<HTMLButtonElement>("new-session");
 const runSetupButton = byId<HTMLButtonElement>("run-setup");
+const historyPanel = byId<HTMLElement>("history");
+const historyList = byId<HTMLOListElement>("history-list");
+const historyToggle = byId<HTMLButtonElement>("history-toggle");
+const historyClear = byId<HTMLButtonElement>("history-clear");
+const historyClose = byId<HTMLButtonElement>("history-close");
 
 // When non-null, the form input answers a setup prompt instead of sending an ask.
 let activeSetupId: string | undefined;
@@ -160,7 +166,6 @@ function updateControls() {
 
 function showPhrase(phrases: string[]) {
   statusLine.textContent = pickPhrase(phrases, statusLine.textContent ?? undefined);
-  statusHint.textContent = "";
 }
 
 function setActivity(activity: Activity) {
@@ -168,6 +173,7 @@ function setActivity(activity: Activity) {
   currentActivity = activity;
   if (changed) {
     window.clearInterval(phraseTimer);
+    statusHint.textContent = "";
     if (activity === "working") {
       showPhrase(WORKING_PHRASES);
       phraseTimer = window.setInterval(() => showPhrase(WORKING_PHRASES), WORKING_PHRASE_MS);
@@ -492,6 +498,15 @@ function handleMessage(message: ServerMessage) {
     case "setup-finished":
       endSetup(message.completed);
       break;
+    case "activity":
+      // What the agent is doing right now ("Reading README.md") shows under the pun.
+      if (currentActivity === "working" && message.id === activeQuestionId) {
+        statusHint.textContent = message.text;
+      }
+      break;
+    case "history":
+      renderHistory(historyList, message.entries);
+      break;
     case "ready":
       // The sidecar (re)started. Tell it we are listening, so first-run setup can begin.
       transport.send({ type: "widget-ready" });
@@ -591,6 +606,10 @@ cancelButton.addEventListener("click", () => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    if (!historyPanel.hidden) {
+      closeHistory();
+      return;
+    }
     if (cancelCountdown()) {
       return;
     }
@@ -614,6 +633,39 @@ window.addEventListener("focus", () => {
   if (!form.hidden) {
     questionInput.focus();
   }
+});
+
+// ---- History: what was asked, what Ducky looked at, and how it went ----
+
+const CLEAR_CONFIRM_MS = 3000;
+let clearTimer: number | undefined;
+
+function openHistory() {
+  historyPanel.hidden = false;
+  transport.send({ type: "history-request" });
+}
+
+function closeHistory() {
+  historyPanel.hidden = true;
+  resetClearButton();
+}
+
+function resetClearButton() {
+  window.clearTimeout(clearTimer);
+  historyClear.textContent = "Clear";
+}
+
+historyToggle.addEventListener("click", openHistory);
+historyClose.addEventListener("click", closeHistory);
+// Clearing deletes everything, so it takes two clicks.
+historyClear.addEventListener("click", () => {
+  if (historyClear.textContent === "Clear") {
+    historyClear.textContent = "Click again to clear";
+    clearTimer = window.setTimeout(resetClearButton, CLEAR_CONFIRM_MS);
+    return;
+  }
+  resetClearButton();
+  transport.send({ type: "history-clear" });
 });
 
 newSessionButton.addEventListener("click", () => {

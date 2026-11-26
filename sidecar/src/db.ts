@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import type { HistoryEntry, HistoryKind } from "../../shared/messages.ts";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -41,6 +42,14 @@ export function openDb(path = dbPath()): Database.Database {
       name TEXT PRIMARY KEY,
       path TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS history (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      at          TEXT NOT NULL,
+      kind        TEXT NOT NULL,
+      repo        TEXT,
+      text        TEXT NOT NULL,
+      duration_ms INTEGER
+    );
   `);
   return db;
 }
@@ -81,4 +90,43 @@ export function writeProjects(db: Database.Database, projects: DbProject[]): voi
     }
   });
   tx();
+}
+
+// History is local, so it is capped: when it passes this, the oldest entries go.
+export const MAX_HISTORY_ENTRIES = 500;
+
+/** Records one thing that happened, and drops the oldest entries beyond the cap. */
+export function addHistory(
+  db: Database.Database,
+  entry: { kind: HistoryKind; text: string; repo?: string; durationMs?: number },
+  now = new Date(),
+): void {
+  db.prepare("INSERT INTO history (at, kind, repo, text, duration_ms) VALUES (?, ?, ?, ?, ?)").run(
+    now.toISOString(),
+    entry.kind,
+    entry.repo ?? null,
+    entry.text,
+    entry.durationMs ?? null,
+  );
+  db.prepare("DELETE FROM history WHERE id <= (SELECT MAX(id) FROM history) - ?").run(MAX_HISTORY_ENTRIES);
+}
+
+/** Returns the most recent entries, newest first. */
+export function readHistory(db: Database.Database, limit = 100): HistoryEntry[] {
+  const rows = db
+    .prepare("SELECT id, at, kind, repo, text, duration_ms FROM history ORDER BY id DESC LIMIT ?")
+    .all(limit) as { id: number; at: string; kind: HistoryKind; repo: string | null; text: string; duration_ms: number | null }[];
+  return rows.map((row) => ({
+    id: row.id,
+    at: row.at,
+    kind: row.kind,
+    ...(row.repo ? { repo: row.repo } : {}),
+    text: row.text,
+    ...(row.duration_ms !== null ? { durationMs: row.duration_ms } : {}),
+  }));
+}
+
+/** Deletes all history. */
+export function clearHistory(db: Database.Database): void {
+  db.exec("DELETE FROM history");
 }

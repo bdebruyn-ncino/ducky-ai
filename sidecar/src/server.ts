@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
-import { decodeClientMessage, encode, type ClientMessage, type ServerMessage } from "../../shared/messages.ts";
+import { decodeClientMessage, encode, type ClientMessage, type HistoryKind, type ServerMessage } from "../../shared/messages.ts";
 import { runAgent } from "./agent.ts";
 import { configFromDb, loadConfigFromJson, type DuckyConfig } from "./config.ts";
-import { openDb, readProjects, readSettings, writeProjects, writeSettings } from "./db.ts";
+import { addHistory, clearHistory, openDb, readHistory, readProjects, readSettings, writeProjects, writeSettings } from "./db.ts";
 import { findRepoInText, listRepos, resolveProject } from "./projects.ts";
 import { runSetup } from "./setup.ts";
 import { chooseDefaults, detectReposRoot, readLegacyConfig } from "./setup-defaults.ts";
@@ -101,6 +101,25 @@ function logDecision(summary: string, decision: string) {
   console.error(`[confirmation] ${decision}: ${summary}`);
 }
 
+// Writes something that happened to the local history. Without a database (the JSON config used in tests) there is none.
+function record(kind: HistoryKind, text: string, repo?: string, durationMs?: number) {
+  if (!db) {
+    return;
+  }
+  try {
+    addHistory(db, { kind, text, repo, durationMs });
+  } catch (error) {
+    console.error(`[history] could not save: ${errorMessage(error)}`);
+  }
+}
+
+// Approvals go in the history too, but setup questions are not part of anyone's work.
+function recordApproval(questionId: string, summary: string, decision: string) {
+  if (!questionId.startsWith("setup")) {
+    record("approval", `${decision}: ${summary}`);
+  }
+}
+
 function askUser(questionId: string, summary: string, options: string[], timeoutMs = CONFIRMATION_TIMEOUT_MS) {
   const confirmationId = randomUUID();
   const request: ServerMessage = { type: "confirmation-request", id: questionId, confirmationId, summary, options };
@@ -109,6 +128,7 @@ function askUser(questionId: string, summary: string, options: string[], timeout
     const timer = setTimeout(() => {
       pendingConfirmations.delete(confirmationId);
       logDecision(summary, "timed out, denied");
+      recordApproval(questionId, summary, "timed out, denied");
       send({ type: "confirmation-expired", id: questionId, confirmationId });
       resolve(undefined);
     }, timeoutMs);
@@ -119,6 +139,7 @@ function askUser(questionId: string, summary: string, options: string[], timeout
       resolve: (response) => {
         clearTimeout(timer);
         logDecision(summary, describeDecision(response));
+        recordApproval(questionId, summary, describeDecision(response));
         resolve(response);
       },
     });
@@ -155,27 +176,56 @@ async function handleAsk({ id, question, project }: AskMessage) {
   const abortController = new AbortController();
   runningQuestions.set(id, abortController);
 
+  let repo: string | undefined;
+  let startedAt = Date.now();
   try {
-    const repo = await chooseRepo(id, question, project);
+    repo = await chooseRepo(id, question, project);
     if (!repo) {
       send({ type: "cancelled", id });
       return;
     }
+    record("question", question, repo);
 
     // Only now is Ducky actually working; until here it may have been waiting for the user.
     send({ type: "status", id, state: "working" });
-    const result = await runAgent(config!, repo, question, abortController, makeOnConfirm(id), sessionByProject.get(repo));
+    startedAt = Date.now();
+    const chosenRepo = repo;
+    const result = await runAgent(
+      config!,
+      chosenRepo,
+      question,
+      abortController,
+      makeOnConfirm(id),
+      sessionByProject.get(chosenRepo),
+      (text) => {
+        send({ type: "activity", id, text });
+        record("activity", text, chosenRepo);
+      },
+    );
+
+    // How long the agent took, including any time spent waiting for the user to approve something.
+    const durationMs = Date.now() - startedAt;
+    console.error(`[ask] ${chosenRepo}: ${result.ok ? "answered" : "failed"} in ${(durationMs / 1000).toFixed(1)}s`);
     if (abortController.signal.aborted) {
+      record("cancelled", "Cancelled", chosenRepo, durationMs);
       send({ type: "cancelled", id });
     } else if (result.ok) {
-      currentRepo = repo;
-      sessionByProject.set(repo, result.sessionId);
+      currentRepo = chosenRepo;
+      sessionByProject.set(chosenRepo, result.sessionId);
+      record("answer", result.answer, chosenRepo, durationMs);
       send({ type: "answer", id, text: result.answer });
     } else {
+      record("error", result.reason, chosenRepo, durationMs);
       send({ type: "error", id, message: result.reason });
     }
   } catch (error) {
-    send(abortController.signal.aborted ? { type: "cancelled", id } : { type: "error", id, message: errorMessage(error) });
+    if (abortController.signal.aborted) {
+      record("cancelled", "Cancelled", repo, Date.now() - startedAt);
+      send({ type: "cancelled", id });
+    } else {
+      record("error", errorMessage(error), repo, Date.now() - startedAt);
+      send({ type: "error", id, message: errorMessage(error) });
+    }
   } finally {
     runningQuestions.delete(id);
   }
@@ -297,6 +347,15 @@ function handle(message: ClientMessage) {
       break;
     case "run-setup":
       void startSetup();
+      break;
+    case "history-request":
+      send({ type: "history", entries: db ? readHistory(db, message.limit ?? 100) : [] });
+      break;
+    case "history-clear":
+      if (db) {
+        clearHistory(db);
+      }
+      send({ type: "history", entries: [] });
       break;
     case "widget-ready":
       // The widget can only hear us from now on, so this is the moment first-run setup can begin.

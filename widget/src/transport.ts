@@ -56,6 +56,8 @@ function createMockTransport(): Transport {
             listener({ type: "answer", id: message.id, text: `(mock) You asked: ${message.question}` });
           }, MOCK_THINKING_MS),
         );
+      } else if (message.type === "history-request") {
+        listener({ type: "history", entries: [] });
       } else if (message.type === "cancel") {
         window.clearTimeout(timers.get(message.id));
         timers.delete(message.id);

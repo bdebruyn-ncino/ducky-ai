@@ -7,6 +7,7 @@ import { createInterface } from "node:readline";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { decodeServerMessage, encode, type ClientMessage, type ServerMessage } from "../../shared/messages.ts";
+import { addHistory, openDb } from "./db.ts";
 
 const sidecarDir = fileURLToPath(new URL("..", import.meta.url));
 let workDir: string;
@@ -260,6 +261,36 @@ test("a widget that asks again is told the current setup step again", timeout, a
 
     sidecar.send({ type: "widget-ready" });
     assert.deepEqual(await sidecar.next(), first);
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("history from before a restart is still there, and can be cleared", timeout, async () => {
+  // Written by an earlier run of the app.
+  const dbFile = join(workDir, "history-test.db");
+  const db = openDb(dbFile);
+  addHistory(db, { kind: "question", text: "what does this do?", repo: "alpha-api" });
+  addHistory(db, { kind: "answer", text: "It serves the API.", repo: "alpha-api", durationMs: 3100 });
+  db.close();
+
+  const sidecar = startSidecar({ DUCKY_CONFIG: "", DUCKY_DB: dbFile });
+  try {
+    await sidecar.next(); // ready
+
+    sidecar.send({ type: "history-request" });
+    const history = await sidecar.next();
+    assert.equal(history.type, "history");
+    if (history.type === "history") {
+      assert.deepEqual(history.entries.map((entry) => entry.kind), ["answer", "question"]);
+      assert.equal(history.entries[0].durationMs, 3100);
+    }
+
+    sidecar.send({ type: "history-clear" });
+    assert.deepEqual(await sidecar.next(), { type: "history", entries: [] });
+
+    sidecar.send({ type: "history-request" });
+    assert.deepEqual(await sidecar.next(), { type: "history", entries: [] });
   } finally {
     sidecar.stop();
   }

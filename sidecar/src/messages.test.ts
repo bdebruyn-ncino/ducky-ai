@@ -11,6 +11,18 @@ test("a widget-ready message is understood", () => {
   assert.deepEqual(decodeClientMessage('{"type":"widget-ready"}'), { type: "widget-ready" });
 });
 
+test("history requests are understood, with or without a limit", () => {
+  assert.deepEqual(decodeClientMessage('{"type":"history-request"}'), { type: "history-request" });
+  assert.deepEqual(decodeClientMessage('{"type":"history-request","limit":20}'), { type: "history-request", limit: 20 });
+  assert.throws(() => decodeClientMessage('{"type":"history-request","limit":"lots"}'), /valid client message/);
+  assert.deepEqual(decodeClientMessage('{"type":"history-clear"}'), { type: "history-clear" });
+});
+
+test("activity and history messages from the sidecar are understood", () => {
+  assert.equal(decodeServerMessage('{"type":"activity","id":"q1","text":"Reading README.md"}').type, "activity");
+  assert.equal(decodeServerMessage('{"type":"history","entries":[]}').type, "history");
+});
+
 test("an ask may omit the project but not the question", () => {
   assert.doesNotThrow(() => decodeClientMessage('{"type":"ask","id":"q1","question":"hi"}'));
   assert.throws(() => decodeClientMessage('{"type":"ask","id":"q1"}'), /valid client message/);
