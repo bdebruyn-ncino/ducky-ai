@@ -1,4 +1,6 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { ServerMessage } from "../../shared/messages.ts";
 import { createTransport } from "./transport.ts";
 
@@ -45,6 +47,18 @@ function finishQuestion() {
   questionInput.focus();
 }
 
+// If the window is hidden the user has walked away, so tell them. The text is generic on
+// purpose: answers can contain repo content, and notifications show on the lock screen.
+async function notifyIfHidden(title: string) {
+  if (!isTauri() || (await getCurrentWindow().isVisible())) {
+    return;
+  }
+  if (!(await isPermissionGranted()) && (await requestPermission()) !== "granted") {
+    return;
+  }
+  sendNotification({ title, body: "Press Control+Option+D to see it." });
+}
+
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case "status":
@@ -52,10 +66,12 @@ function handleMessage(message: ServerMessage) {
       break;
     case "answer":
       addMessage("answer", message.text);
+      void notifyIfHidden("Ducky has your answer");
       finishQuestion();
       break;
     case "error":
       addMessage("error", message.message);
+      void notifyIfHidden("Ducky ran into a problem");
       finishQuestion();
       break;
     case "cancelled":
@@ -66,6 +82,7 @@ function handleMessage(message: ServerMessage) {
       // The approve and choose buttons arrive with #9.
       addMessage("note", `Needs your input: ${message.summary}`);
       setActivity("waiting");
+      void notifyIfHidden("Ducky needs your answer");
       break;
     case "ready":
       break;
