@@ -18,7 +18,12 @@ function bedrockEnv(config: DuckyConfig) {
   };
 }
 
-export async function runAgent(config: DuckyConfig, project: string, question: string): Promise<AgentResult> {
+export async function runAgent(
+  config: DuckyConfig,
+  project: string,
+  question: string,
+  abortController?: AbortController,
+): Promise<AgentResult> {
   const match = resolveProject(project, listRepos(config.reposRoot));
   if (match.status === "unknown") {
     return { ok: false, reason: `Unknown project "${project}". Known projects: ${match.known.join(", ")}` };
@@ -43,6 +48,7 @@ export async function runAgent(config: DuckyConfig, project: string, question: s
         append: "You are Ducky, a rubber duck for developers. Answer concisely and say which files you looked at.",
       },
       env: bedrockEnv(config),
+      abortController,
     },
   });
 
