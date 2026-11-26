@@ -152,12 +152,69 @@ function handleMessage(message: ServerMessage) {
       addMessage("note", "Cancelled.");
       finishQuestion();
       break;
-    case "confirmation-request":
-      // The approve and choose buttons arrive with #9.
-      addMessage("note", `Needs your input: ${message.summary}`);
+    case "confirmation-request": {
+      const item = document.createElement("li");
+      item.className = "message confirmation";
+
+      const label = document.createElement("span");
+      // textContent, never innerHTML: summary comes from the agent.
+      label.textContent = message.summary;
+      item.append(label);
+
+      const respond = (approved: boolean, choice?: string) => {
+        item.querySelectorAll("button").forEach((b) => b.remove());
+        const result = document.createElement("span");
+        result.className = "confirmation-result";
+        result.textContent = approved ? (choice ?? "Approved") : "Denied";
+        item.append(result);
+        transport.send({
+          type: "confirmation-response",
+          id: message.id,
+          confirmationId: message.confirmationId,
+          approved,
+          choice,
+        });
+      };
+
+      if (message.options && message.options.length > 0) {
+        // Repo picker or other multi-choice prompt.
+        for (const option of message.options) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "confirm-option";
+          btn.textContent = option;
+          btn.addEventListener("click", () => respond(true, option));
+          item.append(btn);
+        }
+        const denyBtn = document.createElement("button");
+        denyBtn.type = "button";
+        denyBtn.className = "confirm-deny";
+        denyBtn.textContent = "Cancel";
+        denyBtn.addEventListener("click", () => respond(false));
+        item.append(denyBtn);
+      } else {
+        // Approve / Deny for a write-action confirmation.
+        const approveBtn = document.createElement("button");
+        approveBtn.type = "button";
+        approveBtn.className = "confirm-approve";
+        approveBtn.textContent = "Approve";
+        approveBtn.addEventListener("click", () => respond(true));
+
+        const denyBtn = document.createElement("button");
+        denyBtn.type = "button";
+        denyBtn.className = "confirm-deny";
+        denyBtn.textContent = "Deny";
+        denyBtn.addEventListener("click", () => respond(false));
+
+        item.append(approveBtn, denyBtn);
+      }
+
+      messageList.append(item);
+      item.scrollIntoView({ block: "end" });
       setActivity("waiting");
       void notifyIfHidden("Ducky needs your answer");
       break;
+    }
     case "ready":
       break;
   }

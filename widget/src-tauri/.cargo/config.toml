@@ -1,0 +1,6 @@
+# Pin to a stable SDK version.
+# macOS 27.0 SDK ships .tbd files with an `arm64e.x1-macos` variant that
+# clang 21 / LLVM linker does not yet recognise, causing link errors.
+# Remove this override once CLT ships a compatible toolchain.
+[env]
+SDKROOT = { value = "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk", force = true }

@@ -39,12 +39,33 @@ function pickRepo(question: string, project: string | undefined, repos: string[]
   return match.status === "found" ? { repo: match.name } : { options: match.options };
 }
 
+const CONFIRMATION_TIMEOUT_MS = 30_000;
+
 function askUser(questionId: string, summary: string, options: string[]) {
   const confirmationId = randomUUID();
   send({ type: "confirmation-request", id: questionId, confirmationId, summary, options });
   return new Promise<ConfirmationResponse | undefined>((resolve) => {
-    pendingConfirmations.set(confirmationId, { questionId, resolve });
+    const timer = setTimeout(() => {
+      pendingConfirmations.delete(confirmationId);
+      resolve(undefined);
+    }, CONFIRMATION_TIMEOUT_MS);
+
+    pendingConfirmations.set(confirmationId, {
+      questionId,
+      resolve: (response) => {
+        clearTimeout(timer);
+        resolve(response);
+      },
+    });
   });
+}
+
+// onConfirm for runAgent: asks the user, returns true if approved, false on deny or timeout.
+function makeOnConfirm(questionId: string) {
+  return async (summary: string): Promise<boolean> => {
+    const response = await askUser(questionId, summary, []);
+    return response?.approved === true;
+  };
 }
 
 // Returns the repo to run in, or undefined when the user cancelled.
@@ -72,7 +93,7 @@ async function handleAsk({ id, question, project }: AskMessage) {
 
     // Only now is Ducky actually working; until here it may have been waiting for the user.
     send({ type: "status", id, state: "working" });
-    const result = await runAgent(config, repo, question, abortController);
+    const result = await runAgent(config, repo, question, abortController, makeOnConfirm(id));
     if (abortController.signal.aborted) {
       send({ type: "cancelled", id });
     } else if (result.ok) {
