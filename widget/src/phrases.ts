@@ -23,6 +23,17 @@ export const WAITING_PHRASES = [
   "I need a quick yes or no from you.",
 ];
 
+export const IDLE_EMPTY = "Click me and ask away";
+export const IDLE_FOLLOW_UP = "Anything else? Click me or just start typing.";
+export const IDLE_TEXT_ONLY = "Type your question below.";
+export const LISTENING_HINT = "Click the duck to stop";
+export const NEW_CONVERSATION_HINT = "Fresh pond. New conversation.";
+
+export const SETUP_STATUS = "Setting up Ducky...";
+export const SETUP_HINT = "Answer below, or click Cancel to stop.";
+export const SETUP_DEFAULT_HINT = "Press Enter to use this, or type your own.";
+export const SETUP_UNFINISHED_HINT = "Setup wasn't finished. Click Setup to try again.";
+
 export const SENDING_TEXT = "Taking flight in";
 export const LISTENING_PLACEHOLDER = "Quack away, I'm listening...";
 export const IDLE_PLACEHOLDER = "Ask Ducky...";

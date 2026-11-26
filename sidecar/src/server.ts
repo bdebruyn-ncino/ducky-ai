@@ -6,12 +6,15 @@ import { configFromDb, loadConfigFromJson, type DuckyConfig } from "./config.ts"
 import { openDb, readProjects, readSettings, writeProjects, writeSettings } from "./db.ts";
 import { findRepoInText, listRepos, resolveProject } from "./projects.ts";
 import { runSetup } from "./setup.ts";
+import { chooseDefaults, detectReposRoot, readLegacyConfig } from "./setup-defaults.ts";
 
 type AskMessage = Extract<ClientMessage, { type: "ask" }>;
 type ConfirmationResponse = Extract<ClientMessage, { type: "confirmation-response" }>;
 
 interface PendingConfirmation {
   questionId: string;
+  // Kept so setup can say the same thing again to a widget that was not listening the first time.
+  request: ServerMessage;
   resolve: (response: ConfirmationResponse | undefined) => void;
 }
 
@@ -39,6 +42,7 @@ let currentRepo: string | undefined;
 // A single pending free-text setup response. Only one setup prompt is in
 // flight at a time, so a single slot is sufficient.
 let pendingSetupResolve: ((value: string | null) => void) | undefined;
+let pendingSetupPrompt: ServerMessage | undefined;
 let setupInProgress = false;
 
 // stdout carries protocol messages only. Log to stderr.
@@ -79,6 +83,8 @@ function pickRepo(question: string, project: string | undefined, repos: string[]
 
 // Anything unanswered for this long is denied. The environment variable lets tests use a short wait.
 const CONFIRMATION_TIMEOUT_MS = Number(process.env.DUCKY_CONFIRMATION_TIMEOUT_MS) || 30_000;
+// Setup asks for things that take a while to find (an inference profile ARN, a folder path), so it waits longer.
+const SETUP_TIMEOUT_MS = Number(process.env.DUCKY_SETUP_TIMEOUT_MS) || 5 * 60_000;
 
 function describeDecision(response: ConfirmationResponse | undefined): string {
   if (!response) {
@@ -95,19 +101,21 @@ function logDecision(summary: string, decision: string) {
   console.error(`[confirmation] ${decision}: ${summary}`);
 }
 
-function askUser(questionId: string, summary: string, options: string[]) {
+function askUser(questionId: string, summary: string, options: string[], timeoutMs = CONFIRMATION_TIMEOUT_MS) {
   const confirmationId = randomUUID();
-  send({ type: "confirmation-request", id: questionId, confirmationId, summary, options });
+  const request: ServerMessage = { type: "confirmation-request", id: questionId, confirmationId, summary, options };
+  send(request);
   return new Promise<ConfirmationResponse | undefined>((resolve) => {
     const timer = setTimeout(() => {
       pendingConfirmations.delete(confirmationId);
       logDecision(summary, "timed out, denied");
       send({ type: "confirmation-expired", id: questionId, confirmationId });
       resolve(undefined);
-    }, CONFIRMATION_TIMEOUT_MS);
+    }, timeoutMs);
 
     pendingConfirmations.set(confirmationId, {
       questionId,
+      request,
       resolve: (response) => {
         clearTimeout(timer);
         logDecision(summary, describeDecision(response));
@@ -193,26 +201,37 @@ function answerConfirmation(response: ConfirmationResponse) {
 }
 
 /** Sends a free-text prompt and returns a promise that resolves when the user answers. */
-function askSetupText(id: string, prompt: string, placeholder?: string): Promise<string | null> {
-  send({ type: "setup-prompt", id, prompt, placeholder });
+function askSetupText(id: string, prompt: string, placeholder?: string, defaultValue?: string): Promise<string | null> {
+  const message: ServerMessage = { type: "setup-prompt", id, prompt, placeholder, defaultValue };
+  pendingSetupPrompt = message;
+  send(message);
   return new Promise<string | null>((resolve) => {
-    const timer = setTimeout(() => {
-      if (pendingSetupResolve === resolve) {
-        pendingSetupResolve = undefined;
-      }
-      resolve(null);
-    }, CONFIRMATION_TIMEOUT_MS);
-
-    pendingSetupResolve = (value) => {
+    const finish = (value: string | null) => {
       clearTimeout(timer);
+      pendingSetupResolve = undefined;
+      pendingSetupPrompt = undefined;
       resolve(value);
     };
+    const timer = setTimeout(() => finish(null), SETUP_TIMEOUT_MS);
+    pendingSetupResolve = finish;
   });
+}
+
+// If the widget was not listening when a setup step was sent, say it again.
+function resendSetupStep() {
+  if (pendingSetupPrompt) {
+    send(pendingSetupPrompt);
+  }
+  for (const pending of pendingConfirmations.values()) {
+    if (pending.questionId.startsWith("setup")) {
+      send(pending.request);
+    }
+  }
 }
 
 /** Wraps askUser to return the chosen option string (or null on cancel). */
 async function askSetupChoice(id: string, summary: string, options: string[]): Promise<string | null> {
-  const response = await askUser(id, summary, options);
+  const response = await askUser(id, summary, options, SETUP_TIMEOUT_MS);
   return response?.approved && response.choice ? response.choice : null;
 }
 
@@ -226,6 +245,12 @@ async function startSetup() {
     askSetupText,
     askSetupChoice,
     (text) => send({ type: "note", text }),
+    chooseDefaults({
+      saved: db ? readSettings(db) : null,
+      legacy: readLegacyConfig(),
+      envModelArn: process.env.DUCKY_DEFAULT_MODEL_ARN,
+      detectedReposRoot: detectReposRoot(),
+    }),
   );
 
   if (result && db) {
@@ -238,6 +263,7 @@ async function startSetup() {
   }
 
   setupInProgress = false;
+  send({ type: "setup-finished", completed: Boolean(result && db) });
 }
 
 function handle(message: ClientMessage) {
@@ -272,6 +298,14 @@ function handle(message: ClientMessage) {
     case "run-setup":
       void startSetup();
       break;
+    case "widget-ready":
+      // The widget can only hear us from now on, so this is the moment first-run setup can begin.
+      if (setupInProgress) {
+        resendSetupStep();
+      } else if (!config) {
+        void startSetup();
+      }
+      break;
     case "new-session":
       currentRepo = undefined;
       sessionByProject.clear();
@@ -281,11 +315,8 @@ function handle(message: ClientMessage) {
 }
 
 send({ type: "ready" });
-
-// If there is no config on first run, kick off setup immediately.
-if (!config) {
-  void startSetup();
-}
+// First-run setup starts when the widget says it is listening (see "widget-ready"), not now:
+// the widget's page loads more slowly than this process starts, and anything sent before it listens is lost.
 
 for await (const line of createInterface({ input: process.stdin })) {
   if (!line.trim()) {

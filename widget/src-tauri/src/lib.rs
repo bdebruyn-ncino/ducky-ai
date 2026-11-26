@@ -96,6 +96,12 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_notification::init())
+        // Remember where the window was left (position only; the size stays fixed).
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::POSITION)
+                .build(),
+        )
         .manage(Sidecar::default())
         .invoke_handler(tauri::generate_handler![
             send_to_sidecar,
