@@ -5,7 +5,7 @@ A rubber duck for your Mac that can read your code and tickets. Press a hotkey, 
 ## What it does (the demo, about 5 minutes)
 
 1. **First run.** Open Ducky with nothing saved: the window comes forward by itself and setup asks for the AWS profile, the model ARN and where the repos live, with suggestions pre-filled.
-2. **Ask by voice.** Click the duck and say "What does the autospread repo do?". The words appear as you speak; after a pause Ducky counts down two seconds (click the duck or press Esc to stop it), then sends. No repo name needed in the sentence: Ducky finds it, or asks with buttons.
+2. **Ask by voice.** Click the duck and say "What does the autospread repo do?". The words appear as you speak; after a pause Ducky counts down two seconds (click the duck or press Esc to stop it), then sends. No repo name needed in the sentence: Ducky finds it, or asks with buttons. A general question that names no repo ("what is 2 + 2?") is simply answered.
 3. **The answer** arrives as sanitised Markdown with copyable code blocks, and the duck reacts (working, thinking, done). Hide the window while it works and a macOS notification tells you when it is ready.
 4. **Follow up.** "And where is that configured?" Ducky remembers the conversation and the repo.
    While it works, the status line shows what it is doing ("Reading README.md", "Searching for ...").

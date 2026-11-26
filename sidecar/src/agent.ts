@@ -6,6 +6,12 @@ import { ATLASSIAN_READ_TOOLS, buildMcpServers, GITHUB_READ_TOOLS } from "./conn
 import { describeToolUse } from "./activity.ts";
 import { listRepos, resolveProject } from "./projects.ts";
 
+const DUCKY_PROMPT = [
+  "You are Ducky, a rubber duck for developers. Answer concisely and say which files you looked at.",
+  "If the question isn't about a specific repo, answer it directly from your own knowledge without using tools.",
+  "If it is about code but no repo is named, ask which repo.",
+].join(" ");
+
 const READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
 
 // Read-only tools are auto-approved in canUseTool; anything outside this set
@@ -68,7 +74,8 @@ export function makeCanUseTool(
 
 export async function runAgent(
   config: DuckyConfig,
-  project: string,
+  // Undefined means a general question that names no repo; it runs from the repos folder.
+  project: string | undefined,
   question: string,
   abortController?: AbortController,
   onConfirm?: (summary: string) => Promise<boolean>,
@@ -76,14 +83,17 @@ export async function runAgent(
   // Called with a few friendly words each time the agent uses a tool, for example "Reading README.md".
   onActivity?: (text: string) => void,
 ): Promise<AgentResult> {
-  const match = resolveProject(project, listRepos(config.reposRoot));
-  if (match.status === "unknown") {
-    return { ok: false, reason: `Unknown project "${project}". Known projects: ${match.known.join(", ")}` };
+  let cwd = config.reposRoot;
+  if (project !== undefined) {
+    const match = resolveProject(project, listRepos(config.reposRoot));
+    if (match.status === "unknown") {
+      return { ok: false, reason: `Unknown project "${project}". Known projects: ${match.known.join(", ")}` };
+    }
+    if (match.status === "ambiguous") {
+      return { ok: false, reason: `"${project}" could mean: ${match.matches.join(", ")}. Which one?` };
+    }
+    cwd = join(config.reposRoot, match.name);
   }
-  if (match.status === "ambiguous") {
-    return { ok: false, reason: `"${project}" could mean: ${match.matches.join(", ")}. Which one?` };
-  }
-  const cwd = join(config.reposRoot, match.name);
 
   const mcpServers = buildMcpServers(config);
 
@@ -107,7 +117,7 @@ export async function runAgent(
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
-        append: "You are Ducky, a rubber duck for developers. Answer concisely and say which files you looked at.",
+        append: DUCKY_PROMPT,
       },
       env: bedrockEnv(config),
       abortController,
