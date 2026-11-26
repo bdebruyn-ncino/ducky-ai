@@ -10,21 +10,24 @@ export interface VoiceHandlers {
   onError(message: string): void;
   onListeningChanged(isListening: boolean): void;
   onDictationChanged(isOn: boolean): void;
+  onModeChanged(textOnly: boolean): void;
   // Lets the page use a duck click for something else, like stopping a countdown. Return true if it did.
   onDuckClick(): boolean;
 }
 
 export interface Voice {
   isListening(): boolean;
+  isTextOnly(): boolean;
   stop(): void;
 }
 
 // Rust listens through the Mac's own speech recognition and sends the words as events.
 export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButtonElement, handlers: VoiceHandlers): Voice {
   if (!isTauri()) {
-    duckButton.hidden = true;
+    // In a plain browser there is no microphone: the duck stays as a mascot and typing is the only way in.
     modeToggle.hidden = true;
-    return { isListening: () => false, stop: () => {} };
+    handlers.onModeChanged(true);
+    return { isListening: () => false, isTextOnly: () => true, stop: () => {} };
   }
 
   let listening = false;
@@ -63,8 +66,8 @@ export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButton
   }
 
   function applyMode() {
-    duckButton.hidden = textOnly;
     modeToggle.textContent = textOnly ? "Use voice" : "Text only";
+    handlers.onModeChanged(textOnly);
     if (textOnly && listening) {
       stop();
     }
@@ -108,5 +111,5 @@ export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButton
 
   applyMode();
   refreshDictation();
-  return { isListening: () => listening, stop };
+  return { isListening: () => listening, isTextOnly: () => textOnly, stop };
 }

@@ -15,7 +15,7 @@
         "label": "main",
         "title": "Ducky",
         "width": 480,
-        "height": 520,
+        "height": 560,
         "center": true,
         "decorations": true,
         "acceptFirstMouse": true,

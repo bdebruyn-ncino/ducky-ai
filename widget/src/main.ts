@@ -3,11 +3,17 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { ServerMessage } from "../../shared/messages.ts";
 import { createDuck } from "./duck.ts";
+import { startsTyping } from "./keys.ts";
 import { renderMarkdown } from "./markdown.ts";
 import {
   CANCELLED_NOTE,
+  IDLE_EMPTY,
+  IDLE_FOLLOW_UP,
   IDLE_PLACEHOLDER,
+  IDLE_TEXT_ONLY,
+  LISTENING_HINT,
   LISTENING_PLACEHOLDER,
+  NEW_CONVERSATION_HINT,
   NOTIFICATION_ANSWER,
   NOTIFICATION_ERROR,
   NOTIFICATION_WAITING,
@@ -24,10 +30,19 @@ type Activity = "idle" | "working" | "waiting" | "sending";
 
 // After a spoken question, wait this long so the user can stop it before it is sent.
 const SEND_DELAY_SECONDS = 2;
+// While Ducky works, the joke changes now and then so the line does not go stale.
+const WORKING_PHRASE_MS = 4000;
 
 const transport = createTransport();
 let activeQuestionId: string | undefined;
 let pendingSend: { secondsLeft: number; timer: number } | undefined;
+let currentActivity: Activity = "idle";
+let phraseTimer: number | undefined;
+let listening = false;
+let textOnly = false;
+let dictationOn = true;
+// Where new messages go: the body of the latest exchange (a question and everything that followed it).
+let currentBody: HTMLElement | undefined;
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -37,40 +52,93 @@ function byId<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
+const widget = byId<HTMLElement>("widget");
 const messageList = byId<HTMLOListElement>("messages");
-const workingBar = byId<HTMLDivElement>("working");
-const workingText = byId<HTMLSpanElement>("working-text");
+const statusLine = byId<HTMLParagraphElement>("working-text");
+const statusHint = byId<HTMLParagraphElement>("status-hint");
 const cancelButton = byId<HTMLButtonElement>("cancel");
 const form = byId<HTMLFormElement>("ask-form");
 const questionInput = byId<HTMLInputElement>("question");
 const askButton = byId<HTMLButtonElement>("ask");
 const duckButton = byId<HTMLButtonElement>("duck");
 const duck = createDuck(duckButton);
+const typeToggle = byId<HTMLButtonElement>("type-toggle");
 const modeToggle = byId<HTMLButtonElement>("mode-toggle");
 const newSessionButton = byId<HTMLButtonElement>("new-session");
 
-function addMessage(kind: MessageKind, text: string) {
-  const item = document.createElement("li");
-  item.className = `message ${kind}`;
-  // textContent, never innerHTML: answers come from an agent reading arbitrary repos.
-  item.textContent = text;
-  messageList.append(item);
-  item.scrollIntoView({ block: "end" });
+// ---- The conversation: exchanges, newest open, older ones folded to one line ----
+
+function setView() {
+  widget.dataset.view = messageList.querySelector(".exchange") ? "conversation" : "empty";
 }
 
-// While Ducky works, the joke changes now and then so the line does not go stale.
-const WORKING_PHRASE_MS = 4000;
-let currentActivity: Activity = "idle";
-let phraseTimer: number | undefined;
+function startExchange(question: string) {
+  currentBody?.parentElement?.classList.add("collapsed");
+
+  const exchange = document.createElement("li");
+  exchange.className = "exchange";
+  const title = document.createElement("button");
+  title.type = "button";
+  title.className = "exchange-title";
+  // textContent, never innerHTML: this is the user's own text, but the habit keeps us safe.
+  title.textContent = question;
+  title.addEventListener("click", () => exchange.classList.toggle("collapsed"));
+  const body = document.createElement("div");
+  body.className = "exchange-body";
+  exchange.append(title, body);
+
+  messageList.append(exchange);
+  currentBody = body;
+  setView();
+  exchange.scrollIntoView({ block: "end" });
+}
+
+// Messages inside an exchange are divs; before the first question they sit straight in the list.
+function createMessageElement(className: string): HTMLElement {
+  const element = document.createElement(currentBody ? "div" : "li");
+  element.className = `message ${className}`;
+  return element;
+}
+
+function appendToConversation(element: HTMLElement) {
+  (currentBody ?? messageList).append(element);
+  element.scrollIntoView({ block: "end" });
+}
+
+function addMessage(kind: MessageKind, text: string) {
+  if (kind === "question") {
+    startExchange(text);
+    return;
+  }
+  const item = createMessageElement(kind);
+  // textContent, never innerHTML: answers come from an agent reading arbitrary repos.
+  item.textContent = text;
+  appendToConversation(item);
+}
+
+// ---- The stage: the duck and one line saying what is going on ----
+
+function idleStatus(): string {
+  if (textOnly) {
+    return IDLE_TEXT_ONLY;
+  }
+  return widget.dataset.view === "empty" ? IDLE_EMPTY : IDLE_FOLLOW_UP;
+}
+
+function showIdleStatus() {
+  statusLine.textContent = idleStatus();
+  statusHint.textContent = "";
+}
 
 function showPhrase(phrases: string[]) {
-  workingText.textContent = pickPhrase(phrases, workingText.textContent ?? undefined);
+  statusLine.textContent = pickPhrase(phrases, statusLine.textContent ?? undefined);
+  statusHint.textContent = "";
 }
 
 function setActivity(activity: Activity) {
   const changed = activity !== currentActivity;
   currentActivity = activity;
-  workingBar.hidden = activity === "idle";
+  cancelButton.hidden = activity === "idle";
   if (changed) {
     window.clearInterval(phraseTimer);
     if (activity === "working") {
@@ -78,6 +146,8 @@ function setActivity(activity: Activity) {
       phraseTimer = window.setInterval(() => showPhrase(WORKING_PHRASES), WORKING_PHRASE_MS);
     } else if (activity === "waiting") {
       showPhrase(WAITING_PHRASES);
+    } else if (activity === "idle" && !listening) {
+      showIdleStatus();
     }
   }
   askButton.disabled = activity === "working" || activity === "waiting";
@@ -85,12 +155,47 @@ function setActivity(activity: Activity) {
   duck.setActivity(activity);
 }
 
+function syncDuckVoice() {
+  // In text-only mode voice is not wanted, so a missing Dictation switch is nothing to mourn.
+  duck.setVoiceAvailable(dictationOn || textOnly);
+}
+
+// ---- The text box: tucked away until wanted, always there in text-only mode ----
+
+function showTextBox() {
+  form.hidden = false;
+  typeToggle.hidden = true;
+  questionInput.focus();
+}
+
+function hideTextBox() {
+  if (textOnly) {
+    return;
+  }
+  form.hidden = true;
+  typeToggle.hidden = false;
+}
+
+function applyTextOnly(on: boolean) {
+  textOnly = on;
+  form.hidden = !on;
+  typeToggle.hidden = on;
+  syncDuckVoice();
+  if (currentActivity === "idle" && !listening && !pendingSend) {
+    showIdleStatus();
+  }
+}
+
+// ---- Asking ----
+
 function finishQuestion() {
   activeQuestionId = undefined;
   // Confirmation buttons left over from this question (for example after Cancel) can no longer be used.
   messageList.querySelectorAll(".message.confirmation button").forEach((button) => button.remove());
   setActivity("idle");
-  questionInput.focus();
+  if (!form.hidden) {
+    questionInput.focus();
+  }
 }
 
 function sendQuestion(question: string) {
@@ -101,13 +206,14 @@ function sendQuestion(question: string) {
   activeQuestionId = crypto.randomUUID();
   addMessage("question", question);
   questionInput.value = "";
+  hideTextBox();
   setActivity("working");
   transport.send({ type: "ask", id: activeQuestionId, question });
 }
 
 function showCountdown(secondsLeft: number) {
   setActivity("sending");
-  workingText.textContent = `${SENDING_TEXT} ${secondsLeft}... click the duck or press Esc to edit`;
+  statusHint.textContent = `${SENDING_TEXT} ${secondsLeft}... click the duck or press Esc to edit`;
 }
 
 function stopCountdownTimer() {
@@ -134,19 +240,22 @@ function tickCountdown() {
 }
 
 // A spoken question goes into the box, then is sent after a short delay unless the user steps in.
+// The stage shows what Ducky heard while it counts down.
 function startCountdown(text: string) {
   questionInput.value = text;
   if (activeQuestionId) {
     // Still answering the last question: leave the text in the box for the user to send.
+    showTextBox();
     return;
   }
 
   stopCountdownTimer();
+  statusLine.textContent = text;
   pendingSend = { secondsLeft: SEND_DELAY_SECONDS, timer: window.setInterval(tickCountdown, 1000) };
   showCountdown(SEND_DELAY_SECONDS);
 }
 
-// Returns true if there was a countdown to stop. The text stays in the box for editing.
+// Returns true if there was a countdown to stop. The text moves to the box so it can be edited.
 function cancelCountdown(): boolean {
   if (!pendingSend) {
     return false;
@@ -154,7 +263,7 @@ function cancelCountdown(): boolean {
 
   stopCountdownTimer();
   setActivity("idle");
-  questionInput.focus();
+  showTextBox();
   return true;
 }
 
@@ -170,17 +279,17 @@ async function notifyIfHidden(title: string) {
   sendNotification({ title, body: "Press Control+Option+D to see it." });
 }
 
+// ---- Messages from the sidecar ----
+
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case "status":
       setActivity("working");
       break;
     case "answer": {
-      const item = document.createElement("li");
-      item.className = "message answer";
+      const item = createMessageElement("answer");
       item.append(renderMarkdown(message.text));
-      messageList.append(item);
-      item.scrollIntoView({ block: "end" });
+      appendToConversation(item);
       void notifyIfHidden(NOTIFICATION_ANSWER);
       finishQuestion();
       duck.react("done");
@@ -198,8 +307,7 @@ function handleMessage(message: ServerMessage) {
       duck.react("cancelled");
       break;
     case "confirmation-request": {
-      const item = document.createElement("li");
-      item.className = "message confirmation";
+      const item = createMessageElement("confirmation");
       item.dataset.confirmationId = message.confirmationId;
 
       const label = document.createElement("span");
@@ -224,41 +332,28 @@ function handleMessage(message: ServerMessage) {
         setActivity("working");
       };
 
+      const addButton = (className: string, label: string, onClick: () => void) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = className;
+        button.textContent = label;
+        button.addEventListener("click", onClick);
+        item.append(button);
+      };
+
       if (message.options && message.options.length > 0) {
         // Repo picker or other multi-choice prompt.
         for (const option of message.options) {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "confirm-option";
-          btn.textContent = option;
-          btn.addEventListener("click", () => respond(true, option));
-          item.append(btn);
+          addButton("confirm-option", option, () => respond(true, option));
         }
-        const denyBtn = document.createElement("button");
-        denyBtn.type = "button";
-        denyBtn.className = "confirm-deny";
-        denyBtn.textContent = "Cancel";
-        denyBtn.addEventListener("click", () => respond(false));
-        item.append(denyBtn);
+        addButton("confirm-deny", "Cancel", () => respond(false));
       } else {
         // Approve / Deny for a write-action confirmation.
-        const approveBtn = document.createElement("button");
-        approveBtn.type = "button";
-        approveBtn.className = "confirm-approve";
-        approveBtn.textContent = "Approve";
-        approveBtn.addEventListener("click", () => respond(true));
-
-        const denyBtn = document.createElement("button");
-        denyBtn.type = "button";
-        denyBtn.className = "confirm-deny";
-        denyBtn.textContent = "Deny";
-        denyBtn.addEventListener("click", () => respond(false));
-
-        item.append(approveBtn, denyBtn);
+        addButton("confirm-approve", "Approve", () => respond(true));
+        addButton("confirm-deny", "Deny", () => respond(false));
       }
 
-      messageList.append(item);
-      item.scrollIntoView({ block: "end" });
+      appendToConversation(item);
       setActivity("waiting");
       void notifyIfHidden(NOTIFICATION_WAITING);
       break;
@@ -280,15 +375,22 @@ function handleMessage(message: ServerMessage) {
     }
     case "session-cleared":
       messageList.replaceChildren();
-      addMessage("note", "New conversation started.");
+      currentBody = undefined;
+      setView();
+      showIdleStatus();
+      statusHint.textContent = NEW_CONVERSATION_HINT;
       break;
     case "ready":
       break;
   }
 }
 
+// ---- Wiring ----
+
 const voice = setUpVoice(duckButton, modeToggle, {
   onPartialTranscript: (text) => {
+    // What Ducky hears shows on the stage as you speak.
+    statusLine.textContent = text;
     questionInput.value = text;
   },
   onFinalTranscript: (text) => {
@@ -300,12 +402,33 @@ const voice = setUpVoice(duckButton, modeToggle, {
     addMessage("error", message);
     duck.react("error");
   },
-  onDictationChanged: (isOn) => duck.setVoiceAvailable(isOn),
+  onDictationChanged: (isOn) => {
+    dictationOn = isOn;
+    syncDuckVoice();
+  },
+  onModeChanged: applyTextOnly,
   onListeningChanged: (isListening) => {
+    listening = isListening;
     duck.setListening(isListening);
     questionInput.placeholder = isListening ? LISTENING_PLACEHOLDER : IDLE_PLACEHOLDER;
+    if (isListening) {
+      statusLine.textContent = LISTENING_PLACEHOLDER;
+      statusHint.textContent = LISTENING_HINT;
+    } else if (currentActivity === "idle" && !pendingSend) {
+      showIdleStatus();
+    }
   },
-  onDuckClick: cancelCountdown,
+  onDuckClick: () => {
+    if (cancelCountdown()) {
+      return true;
+    }
+    if (textOnly) {
+      // No voice in text-only mode: the duck just points at the text box.
+      showTextBox();
+      return true;
+    }
+    return false;
+  },
 });
 
 form.addEventListener("submit", (event) => {
@@ -323,6 +446,8 @@ questionInput.addEventListener("input", () => {
   cancelCountdown();
 });
 
+typeToggle.addEventListener("click", showTextBox);
+
 cancelButton.addEventListener("click", () => {
   if (cancelCountdown()) {
     return;
@@ -333,21 +458,31 @@ cancelButton.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") {
+  if (event.key === "Escape") {
+    if (cancelCountdown()) {
+      return;
+    }
+    if (voice.isListening()) {
+      voice.stop();
+      return;
+    }
+    void getCurrentWindow().hide();
     return;
   }
-  if (cancelCountdown()) {
-    return;
+
+  // Just start typing: the text box appears and takes the key.
+  const focusIsOnButton = document.activeElement instanceof HTMLButtonElement;
+  if (document.activeElement !== questionInput && !listening && startsTyping(event, focusIsOnButton)) {
+    showTextBox();
   }
-  if (voice.isListening()) {
-    voice.stop();
-    return;
-  }
-  void getCurrentWindow().hide();
 });
 
-// The hotkey shows the window, so start typing straight away.
-window.addEventListener("focus", () => questionInput.focus());
+// The hotkey shows the window, so start typing straight away if the box is showing.
+window.addEventListener("focus", () => {
+  if (!form.hidden) {
+    questionInput.focus();
+  }
+});
 
 newSessionButton.addEventListener("click", () => {
   transport.send({ type: "new-session" });
