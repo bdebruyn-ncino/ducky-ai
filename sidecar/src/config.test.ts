@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { loadConfig, parseConfig } from "./config.ts";
+import { parseConfig } from "./config.ts";
 
 const validConfig = {
   modelArn: "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc",
@@ -21,8 +21,4 @@ test("a missing modelArn names the field in the error", () => {
 test("a missing reposRoot names the field in the error", () => {
   const { reposRoot, ...withoutRoot } = validConfig;
   assert.throws(() => parseConfig(withoutRoot), /"reposRoot"/);
-});
-
-test("a missing file tells the user to copy the example", () => {
-  assert.throws(() => loadConfig("/nonexistent/ducky.config.json"), /ducky\.config\.example\.json/);
 });

@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.328",
-    "@modelcontextprotocol/server-github": "2025.4.8"
+    "@modelcontextprotocol/server-github": "2025.4.8",
+    "better-sqlite3": "^13.2.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24",
     "tsx": "^4",
     "typescript": "^5"

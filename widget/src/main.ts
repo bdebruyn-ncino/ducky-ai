@@ -65,6 +65,10 @@ const duck = createDuck(duckButton);
 const typeToggle = byId<HTMLButtonElement>("type-toggle");
 const modeToggle = byId<HTMLButtonElement>("mode-toggle");
 const newSessionButton = byId<HTMLButtonElement>("new-session");
+const runSetupButton = byId<HTMLButtonElement>("run-setup");
+
+// When non-null, the form input answers a setup prompt instead of sending an ask.
+let activeSetupId: string | undefined;
 
 // ---- The conversation: exchanges, newest open, older ones folded to one line ----
 
@@ -380,6 +384,21 @@ function handleMessage(message: ServerMessage) {
       showIdleStatus();
       statusHint.textContent = NEW_CONVERSATION_HINT;
       break;
+    case "setup-prompt": {
+      // Switch the input into setup mode: next submit answers the prompt.
+      activeSetupId = message.id;
+      addMessage("note", message.prompt);
+      if (message.placeholder) {
+        questionInput.placeholder = message.placeholder;
+      }
+      // Enable the form so the user can type their answer.
+      askButton.disabled = false;
+      questionInput.focus();
+      break;
+    }
+    case "note":
+      addMessage("note", message.text);
+      break;
     case "ready":
       break;
   }
@@ -438,6 +457,20 @@ form.addEventListener("submit", (event) => {
     stopCountdownTimer();
     setActivity("idle");
   }
+  // During setup, the input answers the current setup prompt, not a question.
+  if (activeSetupId) {
+    const value = questionInput.value.trim();
+    if (!value) {
+      return;
+    }
+    const id = activeSetupId;
+    activeSetupId = undefined;
+    addMessage("question", value);
+    questionInput.value = "";
+    questionInput.placeholder = IDLE_PLACEHOLDER;
+    transport.send({ type: "setup-response", id, value });
+    return;
+  }
   sendQuestion(questionInput.value.trim());
 });
 
@@ -486,6 +519,10 @@ window.addEventListener("focus", () => {
 
 newSessionButton.addEventListener("click", () => {
   transport.send({ type: "new-session" });
+});
+
+runSetupButton.addEventListener("click", () => {
+  transport.send({ type: "run-setup" });
 });
 
 transport.onMessage(handleMessage);
