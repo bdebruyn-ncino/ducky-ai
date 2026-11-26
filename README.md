@@ -86,7 +86,9 @@ Ducky inherits MCP servers from your global Claude Code settings (`settingSource
 
 Only read-only tools are allowed; Ducky will never create or edit a ticket.
 
-GitHub support arrives with [issue 5](../../issues/5).
+### GitHub
+
+No extra setup needed. Ducky reads your GitHub token from the `gh` CLI at startup (`gh auth token`). If `gh` is installed and authenticated, the GitHub connector is active automatically. Ducky will never comment, push, or merge.
 
 ## Project layout
 
