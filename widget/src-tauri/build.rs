@@ -5,6 +5,7 @@ fn main() {
             "send_to_sidecar",
             "start_listening",
             "stop_listening",
+            "dictation_enabled",
         ]),
     ))
     .expect("failed to run tauri-build");

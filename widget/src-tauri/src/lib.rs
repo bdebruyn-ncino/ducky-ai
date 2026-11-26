@@ -67,6 +67,11 @@ fn send_to_sidecar(sidecar: tauri::State<Sidecar>, line: String) -> Result<(), S
 }
 
 #[tauri::command]
+fn dictation_enabled() -> bool {
+    voice::dictation_enabled()
+}
+
+#[tauri::command]
 fn start_listening(app: AppHandle) {
     voice::start(app);
 }
@@ -95,7 +100,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             send_to_sidecar,
             start_listening,
-            stop_listening
+            stop_listening,
+            dictation_enabled
         ])
         .setup(move |app| {
             // Menu-bar only: no Dock icon.

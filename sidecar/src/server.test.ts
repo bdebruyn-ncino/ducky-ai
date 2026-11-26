@@ -28,10 +28,10 @@ before(() => {
 after(() => rmSync(workDir, { recursive: true, force: true }));
 
 // Runs the real server and talks to it using only the shared message types.
-function startSidecar() {
+function startSidecar(extraEnv: Record<string, string> = {}) {
   const child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
     cwd: sidecarDir,
-    env: { ...process.env, DUCKY_CONFIG: configPath },
+    env: { ...process.env, DUCKY_CONFIG: configPath, ...extraEnv },
     stdio: ["pipe", "pipe", "inherit"],
   });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
@@ -116,6 +116,50 @@ test("cancel ends a question that is waiting for the user", timeout, async () =>
     await sidecar.next();
 
     sidecar.send({ type: "cancel", id: "q1" });
+    assert.deepEqual(await sidecar.next(), { type: "cancelled", id: "q1" });
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("a choice that was not on offer cancels the question", timeout, async () => {
+  const sidecar = startSidecar();
+  try {
+    await sidecar.next();
+    sidecar.send({ type: "ask", id: "q1", question: "hello there" });
+    const request = await sidecar.next();
+    if (request.type !== "confirmation-request") {
+      assert.fail("expected a confirmation request");
+    }
+
+    sidecar.send({
+      type: "confirmation-response",
+      id: "q1",
+      confirmationId: request.confirmationId,
+      approved: true,
+      choice: "some-other-repo",
+    });
+    assert.deepEqual(await sidecar.next(), { type: "cancelled", id: "q1" });
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("a request nobody answers is denied after the timeout", timeout, async () => {
+  const sidecar = startSidecar({ DUCKY_CONFIRMATION_TIMEOUT_MS: "300" });
+  try {
+    await sidecar.next();
+    sidecar.send({ type: "ask", id: "q1", question: "hello there" });
+    const request = await sidecar.next();
+    if (request.type !== "confirmation-request") {
+      assert.fail("expected a confirmation request");
+    }
+
+    assert.deepEqual(await sidecar.next(), {
+      type: "confirmation-expired",
+      id: "q1",
+      confirmationId: request.confirmationId,
+    });
     assert.deepEqual(await sidecar.next(), { type: "cancelled", id: "q1" });
   } finally {
     sidecar.stop();

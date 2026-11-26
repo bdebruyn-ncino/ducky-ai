@@ -234,87 +234,318 @@ button:disabled {
   color: #f2f2f2;
 }
 
-/* The duck: a round button that reacts to what Ducky is doing.
-   Only transform and opacity are animated, on whole elements, so it stays smooth. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.choices button {
+  background-color: #2e2e34;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.choices button:hover {
+  background-color: #3a5bd9;
+}
+
+/* The duck. duck.ts sets data-state on the button, and everything below follows from it.
+   Each moving part has one animation, and only transform and opacity change, so it stays smooth. */
 .duck {
   position: relative;
   flex-shrink: 0;
-  width: 52px;
-  height: 52px;
+  width: 76px;
+  height: 88px;
   padding: 0;
   line-height: 0;
-  border-radius: 50%;
+  border-radius: 20px;
   background-color: #2b2d36;
   box-shadow: inset 0 0 0 1px #3a3d48;
   transition: transform 0.15s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .duck:hover {
-  transform: scale(1.06);
+  transform: scale(1.04);
   background-color: #343746;
 }
 
 .duck:active {
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
 
-.duck-figure {
+.duck-art,
+.duck-art svg {
   display: block;
-  will-change: transform;
+  width: 100%;
+  height: 100%;
 }
 
-.duck-image {
-  display: block;
-  -webkit-user-drag: none;
-  user-select: none;
+.duck-art svg {
+  overflow: visible;
 }
 
-/* Listening: a yellow ring spreads out like a sound wave while the duck pulses. */
-.duck.listening {
+/* Eyes: duck.svg hides them all, and each state shows its own. */
+.duck[data-state] .duck-eye-open {
+  display: none;
+}
+.duck[data-state="idle"] .duck-eye-open,
+.duck[data-state="waiting"] .duck-eye-open {
+  display: inline;
+}
+.duck[data-state="listening"] .duck-eye-wide,
+.duck[data-state="dead"] .duck-eye-dead,
+.duck[data-state="done"] .duck-eye-happy,
+.duck[data-state="error"] .duck-eye-worried,
+.duck[data-state="cancelled"] .duck-eye-flat,
+.duck[data-state="working"] .duck-eye-look,
+.duck[data-state="sending"] .duck-eye-look {
+  display: inline;
+}
+
+/* Props around the duck. */
+.duck[data-state="dead"] .duck-prop-dead,
+.duck[data-state="listening"] .duck-prop-sound,
+.duck[data-state="working"] .duck-prop-thought,
+.duck[data-state="working"] .duck-ripples,
+.duck[data-state="waiting"] .duck-prop-question,
+.duck[data-state="done"] .duck-prop-sparkles,
+.duck[data-state="error"] .duck-prop-sweat {
+  display: inline;
+}
+
+/* The button itself says what is going on too. */
+.duck[data-state="listening"] {
   background-color: #3d3410;
   box-shadow: inset 0 0 0 2px #ffd23f;
 }
-
-.duck.listening .duck-figure {
-  animation: pulse 0.9s ease-in-out infinite;
+.duck[data-state="sending"] {
+  box-shadow: inset 0 0 0 2px #ff9f1c;
+}
+.duck[data-state="dead"] {
+  background-color: #25262d;
+  box-shadow: inset 0 0 0 2px #5b5f72;
+}
+.duck[data-state="waiting"] {
+  box-shadow: inset 0 0 0 2px #8fa2ff;
+}
+.duck[data-state="error"] {
+  box-shadow: inset 0 0 0 2px #ff6b6b;
 }
 
-.duck.listening::after {
+.duck[data-state="listening"]::after {
   content: "";
   position: absolute;
   inset: 0;
   border: 2px solid #ffd23f;
-  border-radius: 50%;
+  border-radius: 20px;
   pointer-events: none;
   animation: ring 1.2s ease-out infinite;
 }
 
-/* Waiting for the answer, or counting down to send: a gentle rock. */
-.duck.working .duck-figure {
-  animation: rock 0.9s ease-in-out infinite;
+/* Origins are in the drawing's own coordinates, so turns happen around the duck's feet. */
+.duck-figure {
+  transform-origin: 29px 57px;
+}
+.duck-eyes {
+  transform-origin: 43.5px 19px;
+  animation: blink 5s infinite;
 }
 
-.duck.sending {
-  box-shadow: inset 0 0 0 2px #ff9f1c;
+.duck[data-state="idle"] .duck-figure {
+  animation: bob 3.2s ease-in-out infinite;
+}
+.duck[data-state="listening"] .duck-figure {
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.duck[data-state="working"] .duck-figure {
+  animation: rock 1s ease-in-out infinite;
+}
+.duck[data-state="sending"] .duck-figure {
+  animation: rock 1.6s ease-in-out infinite;
+}
+.duck[data-state="waiting"] .duck-figure {
+  transform: rotate(-5deg);
+}
+.duck[data-state="done"] .duck-figure {
+  animation: hop 0.6s ease-out 2;
+}
+.duck[data-state="error"] .duck-figure {
+  animation: shake 0.5s ease-in-out 1;
 }
 
-.duck.sending .duck-figure {
-  animation: rock 1.4s ease-in-out infinite;
+.duck-sound-1,
+.duck-sound-2,
+.duck-sound-3 {
+  animation: wave 1.2s ease-out infinite;
+}
+.duck-sound-2 {
+  animation-delay: 0.2s;
+}
+.duck-sound-3 {
+  animation-delay: 0.4s;
+}
+
+.duck-thought-1,
+.duck-thought-2,
+.duck-thought-3 {
+  animation: float 1.8s ease-in-out infinite;
+}
+.duck-thought-2 {
+  animation-delay: 0.3s;
+}
+.duck-thought-3 {
+  animation-delay: 0.6s;
+}
+
+.duck-ripple-1,
+.duck-ripple-2 {
+  transform-origin: 29px 57px;
+  animation: spread 1.6s ease-out infinite;
+}
+.duck-ripple-2 {
+  animation-delay: 0.5s;
+}
+
+.duck-question {
+  animation: nod 1s ease-in-out infinite;
+}
+
+.duck-halo {
+  animation: nod 2.4s ease-in-out infinite;
+}
+
+.duck-sparkle-1,
+.duck-sparkle-2,
+.duck-sparkle-3 {
+  animation: twinkle 0.9s ease-in-out infinite;
+}
+.duck-sparkle-1 {
+  transform-origin: 58px 2px;
+}
+.duck-sparkle-2 {
+  transform-origin: 67px -9px;
+  animation-delay: 0.25s;
+}
+.duck-sparkle-3 {
+  transform-origin: 18px 4px;
+  animation-delay: 0.5s;
+}
+
+.duck-sweat {
+  animation: drip 1.2s ease-in infinite;
+}
+
+@keyframes bob {
+  50% {
+    transform: translateY(-1px);
+  }
 }
 
 @keyframes pulse {
   50% {
-    transform: scale(1.07);
+    transform: scale(1.04);
   }
 }
 
 @keyframes rock {
   0%,
   100% {
-    transform: rotate(-5deg);
+    transform: rotate(-3deg);
   }
   50% {
-    transform: rotate(5deg);
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes hop {
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes shake {
+  20%,
+  60% {
+    transform: translateX(-2px);
+  }
+  40%,
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes blink {
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  97% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes wave {
+  0% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(2px);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-3px);
+    opacity: 0;
+  }
+}
+
+@keyframes spread {
+  from {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes nod {
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes twinkle {
+  50% {
+    transform: scale(1.3);
+    opacity: 0.6;
+  }
+}
+
+@keyframes drip {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(8px);
+    opacity: 0;
   }
 }
 
@@ -324,14 +555,15 @@ button:disabled {
     opacity: 0.8;
   }
   to {
-    transform: scale(1.45);
+    transform: scale(1.25);
     opacity: 0;
   }
 }
 
+/* Reduce Motion: nothing moves, but the poses and props still show what the duck is doing. */
 @media (prefers-reduced-motion: reduce) {
   .duck,
-  .duck-figure,
+  .duck *,
   .duck::after {
     animation: none !important;
     transition: none !important;

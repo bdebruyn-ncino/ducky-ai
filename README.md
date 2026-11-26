@@ -67,6 +67,16 @@ Limitations for now:
 - Node must be on the `PATH` of the terminal you start it from. Launching from Finder will not see your shell's `PATH`.
 - A question in flight is lost if the sidecar crashes.
 
+## Confirmations
+
+Ducky never changes anything without your yes. Read-only tools (reading files, searching, and the Jira and GitHub lookups) run on their own. Any other tool, such as editing a file, running a command or changing a ticket, stops and asks first:
+
+- The widget shows what Ducky wants to do with **Approve** and **Deny** buttons. If you hide the window, you get a notification.
+- No answer within 30 seconds counts as a no: the buttons disappear and Ducky carries on without it.
+- When Ducky is not sure which repo you mean, the same mechanism shows one button per repo.
+- Every decision is logged to the terminal as `[confirmation] approved: ...`, `denied`, `timed out, denied` and so on.
+- The gate is the SDK's `canUseTool`, which is skipped for anything your own Claude settings already allow. Ducky also reads your global Claude settings, so a broad `allow` rule there would let a tool run without asking. #27 covers hardening this.
+
 ## Scope
 
 In scope:
