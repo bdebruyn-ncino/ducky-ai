@@ -108,6 +108,46 @@ test("denying the repo choice cancels the question", timeout, async () => {
   }
 });
 
+test("new-session clears the repo memory so the next question asks again", timeout, async () => {
+  const sidecar = startSidecar();
+  try {
+    await sidecar.next(); // ready
+
+    // Pick a repo so it is remembered.
+    sidecar.send({ type: "ask", id: "q1", question: "hello there" });
+    const req1 = await sidecar.next();
+    assert.equal(req1.type, "confirmation-request");
+    if (req1.type !== "confirmation-request") return;
+    sidecar.send({ type: "confirmation-response", id: "q1", confirmationId: req1.confirmationId, approved: true, choice: "alpha-api" });
+    // The question now runs (and will time-out / fail in the test env — that's fine,
+    // we just need to cancel before waiting for a real agent answer).
+    sidecar.send({ type: "cancel", id: "q1" });
+    await sidecar.next(); // cancelled
+
+    // Clear the session.
+    sidecar.send({ type: "new-session" });
+    assert.deepEqual(await sidecar.next(), { type: "session-cleared" });
+
+    // After new-session, an ambiguous question should ask again.
+    sidecar.send({ type: "ask", id: "q2", question: "hello again" });
+    const req2 = await sidecar.next();
+    assert.equal(req2.type, "confirmation-request");
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("new-session clears the session and confirms", timeout, async () => {
+  const sidecar = startSidecar();
+  try {
+    await sidecar.next(); // ready
+    sidecar.send({ type: "new-session" });
+    assert.deepEqual(await sidecar.next(), { type: "session-cleared" });
+  } finally {
+    sidecar.stop();
+  }
+});
+
 test("cancel ends a question that is waiting for the user", timeout, async () => {
   const sidecar = startSidecar();
   try {

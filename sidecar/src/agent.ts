@@ -12,7 +12,7 @@ const READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
 const READ_ONLY_TOOL_SET = new Set([...READ_ONLY_TOOLS, ...ATLASSIAN_READ_TOOLS, ...GITHUB_READ_TOOLS]);
 
 export type AgentResult =
-  | { ok: true; answer: string }
+  | { ok: true; answer: string; sessionId: string }
   | { ok: false; reason: string };
 
 function bedrockEnv(config: DuckyConfig) {
@@ -56,6 +56,7 @@ export async function runAgent(
   question: string,
   abortController?: AbortController,
   onConfirm?: (summary: string) => Promise<boolean>,
+  resumeSessionId?: string,
 ): Promise<AgentResult> {
   const match = resolveProject(project, listRepos(config.reposRoot));
   if (match.status === "unknown") {
@@ -73,6 +74,8 @@ export async function runAgent(
     options: {
       cwd,
       model: config.modelArn,
+      // Resume the previous session for this project if one exists.
+      ...(resumeSessionId ? { resume: resumeSessionId } : {}),
       // No tools/allowedTools filter: canUseTool is the sole gate.
       // Read-only tools are auto-approved; write tools require user confirmation.
       canUseTool: makeCanUseTool(onConfirm),
@@ -95,7 +98,7 @@ export async function runAgent(
     if (message.type !== "result") continue;
 
     return message.subtype === "success"
-      ? { ok: true, answer: message.result }
+      ? { ok: true, answer: message.result, sessionId: message.session_id }
       : { ok: false, reason: message.subtype };
   }
   return { ok: false, reason: "The agent ended without a result." };
