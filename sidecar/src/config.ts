@@ -25,5 +25,6 @@ export function parseConfig(value: any): DuckyConfig {
       throw new Error(`Config field "${field}" is missing or not a non-empty string.`);
     }
   }
+
   return value;
 }

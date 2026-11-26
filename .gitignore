@@ -2,3 +2,4 @@ node_modules/
 dist/
 ducky.config.json
 .DS_Store
+.sf/

@@ -66,6 +66,14 @@ Nothing environment-specific is hard coded. Settings live in `ducky.config.json`
 
 The example config and the loader arrive with [issue 1](../../issues/1). Never commit your real config, ARNs, account IDs or local paths.
 
+## Connectors
+
+Ducky inherits MCP servers from your global Claude Code settings (`settingSources: ["user", "project"]`). If you have the Atlassian MCP server configured there, Ducky will automatically use it for Jira lookups — no extra credentials needed.
+
+Only read-only tools are allowed; Ducky will never create or edit a ticket.
+
+GitHub support arrives with [issue 5](../../issues/5).
+
 ## Project layout
 
 Planned layout; folders appear as their issues are completed.
