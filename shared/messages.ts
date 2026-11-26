@@ -2,6 +2,18 @@
 // One JSON object per line over the sidecar's stdin and stdout.
 // stdout carries protocol messages only; the sidecar logs to stderr.
 
+// One line in the history: something Ducky was asked, did or answered.
+export type HistoryKind = "question" | "answer" | "error" | "cancelled" | "approval" | "activity";
+
+export interface HistoryEntry {
+  id: number;
+  at: string; // ISO time
+  kind: HistoryKind;
+  repo?: string;
+  text: string;
+  durationMs?: number; // how long an answer took
+}
+
 export type ClientMessage =
   | { type: "ask"; id: string; question: string; project?: string }
   | { type: "cancel"; id: string }
@@ -12,7 +24,11 @@ export type ClientMessage =
   // User clicked the Setup button to (re-)run first-time setup.
   | { type: "run-setup" }
   // The widget has loaded and is listening. The sidecar may have said things before that, which were lost.
-  | { type: "widget-ready" };
+  | { type: "widget-ready" }
+  // Ask for the most recent history entries, newest first.
+  | { type: "history-request"; limit?: number }
+  // Delete all history.
+  | { type: "history-clear" };
 
 export type ServerMessage =
   | { type: "ready" }
@@ -31,13 +47,16 @@ export type ServerMessage =
   // An informational note with no user input required (used by setup for status updates).
   | { type: "note"; text: string }
   // Setup is over, finished or cancelled. The widget can stop showing setup state.
-  | { type: "setup-finished"; completed: boolean };
+  | { type: "setup-finished"; completed: boolean }
+  // What the agent is doing right now, for example "Reading README.md".
+  | { type: "activity"; id: string; text: string }
+  | { type: "history"; entries: HistoryEntry[] };
 
 export function encode(message: ClientMessage | ServerMessage): string {
   return JSON.stringify(message) + "\n";
 }
 
-const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired", "session-cleared", "setup-prompt", "note", "setup-finished"];
+const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired", "session-cleared", "setup-prompt", "note", "setup-finished", "activity", "history"];
 
 const isString = (value: unknown): value is string => typeof value === "string";
 const isOptionalString = (value: unknown) => value === undefined || isString(value);
@@ -63,7 +82,9 @@ export function decodeClientMessage(line: string): ClientMessage {
     value.type === "new-session" ||
     (value.type === "setup-response" && isString(value.id) && isString(value.value)) ||
     value.type === "run-setup" ||
-    value.type === "widget-ready";
+    value.type === "widget-ready" ||
+    (value.type === "history-request" && (value.limit === undefined || typeof value.limit === "number")) ||
+    value.type === "history-clear";
 
   if (!isValid) {
     throw new Error(`Not a valid client message: ${line}`);

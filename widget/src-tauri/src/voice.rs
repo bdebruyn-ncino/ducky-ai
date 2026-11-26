@@ -31,8 +31,11 @@ const TRANSCRIPT_EVENT: &str = "voice-transcript";
 const ERROR_EVENT: &str = "voice-error";
 const STOPPED_EVENT: &str = "voice-stopped";
 
-// The transcript must stay unchanged this long before we decide the speaker has finished.
-const SILENCE_MEANS_DONE: Duration = Duration::from_millis(1000);
+// The transcript must stay unchanged this long before we decide the speaker has finished. People often
+// pause in the middle of a sentence to think, so we wait longer unless the words so far already read as
+// a finished sentence (a full stop, question mark or exclamation mark).
+const SENTENCE_END_SILENCE: Duration = Duration::from_millis(1000);
+const MID_SENTENCE_SILENCE: Duration = Duration::from_millis(1600);
 const MAX_LISTEN: Duration = Duration::from_secs(60);
 // If the final result never arrives after we stop listening, clean up anyway.
 const FINAL_RESULT_GRACE: Duration = Duration::from_secs(3);
@@ -224,10 +227,23 @@ fn pick_recognizer() -> Option<(Retained<SFSpeechRecognizer>, String)> {
     })
 }
 
+// How long a pause must last before we take it as the end of what the speaker had to say.
+fn silence_needed(text: &str) -> Duration {
+    if text.trim_end().ends_with(['.', '?', '!']) {
+        SENTENCE_END_SILENCE
+    } else {
+        MID_SENTENCE_SILENCE
+    }
+}
+
 fn note_progress(progress: &Mutex<Progress>, text: &str) {
     if let Ok(mut progress) = progress.lock()
         && progress.text != text
     {
+        debug_log(&format!(
+            "heard \"{text}\" ({}ms after the last change)",
+            progress.changed_at.elapsed().as_millis()
+        ));
         progress.text = text.to_string();
         progress.changed_at = Instant::now();
     }
@@ -256,7 +272,13 @@ fn result_handler(
                     debug_log("first words heard");
                 }
                 if is_final {
-                    debug_log("final result");
+                    // We clear LISTENING when we stop the audio, so if it is still set the recognizer ended by itself.
+                    let we_stopped_it = LISTENING.load(Ordering::SeqCst) == 0;
+                    debug_log(if we_stopped_it {
+                        "final result"
+                    } else {
+                        "final result: the recognizer ended by itself, we had not stopped listening"
+                    });
                 }
                 note_progress(&progress, &text);
                 let _ = app.emit(TRANSCRIPT_EVENT, Transcript { text, is_final });
@@ -291,6 +313,8 @@ fn begin(app: AppHandle) {
     let request = unsafe { SFSpeechAudioBufferRecognitionRequest::new() };
     unsafe {
         request.setShouldReportPartialResults(true);
+        // Full stops and question marks tell us when a sentence is finished, so a pause after one can end sooner.
+        request.setAddsPunctuation(true);
         // Keeps the audio on this Mac.
         request.setRequiresOnDeviceRecognition(true);
     }
@@ -343,10 +367,16 @@ fn watch_for_silence(app: AppHandle, id: u64, progress: Arc<Mutex<Progress>>) {
             let has_spoken_and_stopped = progress
                 .lock()
                 .map(|progress| {
-                    !progress.text.is_empty() && progress.changed_at.elapsed() > SILENCE_MEANS_DONE
+                    !progress.text.is_empty()
+                        && progress.changed_at.elapsed() > silence_needed(&progress.text)
                 })
                 .unwrap_or(false);
             if has_spoken_and_stopped || started.elapsed() > MAX_LISTEN {
+                debug_log(if has_spoken_and_stopped {
+                    "stopping: quiet for long enough"
+                } else {
+                    "stopping: reached the time limit"
+                });
                 on_main(&app, finish);
                 return;
             }
@@ -395,6 +425,30 @@ fn teardown(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_finished_sentence_ends_after_a_shorter_pause() {
+        for text in [
+            "What does this repo do?",
+            "That is all.",
+            "Stop!",
+            "Is it done? ",
+        ] {
+            assert_eq!(silence_needed(text), SENTENCE_END_SILENCE, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_pause_mid_sentence_gets_more_time() {
+        for text in [
+            "what does this repo",
+            "and then",
+            "In the autospread repo, how",
+        ] {
+            assert_eq!(silence_needed(text), MID_SENTENCE_SILENCE, "{text}");
+        }
+        assert!(MID_SENTENCE_SILENCE > SENTENCE_END_SILENCE);
+    }
 
     #[test]
     fn explains_how_to_fix_the_disabled_message() {

@@ -3,6 +3,7 @@ import type { PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import { join } from "node:path";
 import type { DuckyConfig } from "./config.ts";
 import { ATLASSIAN_READ_TOOLS, buildMcpServers, GITHUB_READ_TOOLS } from "./connectors.ts";
+import { describeToolUse } from "./activity.ts";
 import { listRepos, resolveProject } from "./projects.ts";
 
 const READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
@@ -57,6 +58,8 @@ export async function runAgent(
   abortController?: AbortController,
   onConfirm?: (summary: string) => Promise<boolean>,
   resumeSessionId?: string,
+  // Called with a few friendly words each time the agent uses a tool, for example "Reading README.md".
+  onActivity?: (text: string) => void,
 ): Promise<AgentResult> {
   const match = resolveProject(project, listRepos(config.reposRoot));
   if (match.status === "unknown") {
@@ -95,6 +98,14 @@ export async function runAgent(
   });
 
   for await (const message of messages) {
+    if (message.type === "assistant") {
+      for (const block of message.message.content) {
+        if (block.type === "tool_use") {
+          onActivity?.(describeToolUse(block.name, block.input as Record<string, unknown>));
+        }
+      }
+      continue;
+    }
     if (message.type !== "result") continue;
 
     return message.subtype === "success"

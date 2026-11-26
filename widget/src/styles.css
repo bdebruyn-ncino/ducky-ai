@@ -474,3 +474,82 @@ input:focus-visible {
     transition: none !important;
   }
 }
+
+/* ---- History: a panel over the conversation ---- */
+.widget {
+  position: relative;
+}
+
+.history {
+  position: absolute;
+  inset: 0 0 48px 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background-color: var(--bg);
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.history-header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+}
+
+.history-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-entry {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background-color: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.history-entry.expandable {
+  cursor: pointer;
+}
+
+.history-entry[data-kind="activity"] {
+  padding: 4px 12px;
+  background: none;
+  box-shadow: none;
+  opacity: 0.8;
+}
+
+.history-entry[data-kind="error"] {
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.history-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.history-text {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.history-empty {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--muted);
+}
