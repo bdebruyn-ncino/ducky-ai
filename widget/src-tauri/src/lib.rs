@@ -1,4 +1,5 @@
 mod sidecar;
+mod voice;
 
 use sidecar::Sidecar;
 use tauri::{
@@ -65,6 +66,16 @@ fn send_to_sidecar(sidecar: tauri::State<Sidecar>, line: String) -> Result<(), S
     sidecar.send(&line)
 }
 
+#[tauri::command]
+fn start_listening(app: AppHandle) {
+    voice::start(app);
+}
+
+#[tauri::command]
+fn stop_listening(app: AppHandle) {
+    voice::stop(app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let hotkey = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyD);
@@ -81,7 +92,11 @@ pub fn run() {
         )
         .plugin(tauri_plugin_notification::init())
         .manage(Sidecar::default())
-        .invoke_handler(tauri::generate_handler![send_to_sidecar])
+        .invoke_handler(tauri::generate_handler![
+            send_to_sidecar,
+            start_listening,
+            stop_listening
+        ])
         .setup(move |app| {
             // Menu-bar only: no Dock icon.
             #[cfg(target_os = "macos")]

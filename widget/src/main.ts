@@ -1,4 +1,5 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { ServerMessage } from "../../shared/messages.ts";
@@ -25,6 +26,8 @@ const cancelButton = byId<HTMLButtonElement>("cancel");
 const form = byId<HTMLFormElement>("ask-form");
 const questionInput = byId<HTMLInputElement>("question");
 const askButton = byId<HTMLButtonElement>("ask");
+const micButton = byId<HTMLButtonElement>("mic");
+let isListening = false;
 
 function addMessage(kind: MessageKind, text: string) {
   const item = document.createElement("li");
@@ -118,4 +121,38 @@ document.addEventListener("keydown", (event) => {
 // The hotkey shows the window, so start typing straight away.
 window.addEventListener("focus", () => questionInput.focus());
 
+function setListening(listening: boolean) {
+  isListening = listening;
+  micButton.classList.toggle("listening", listening);
+  micButton.title = listening ? "Stop listening" : "Talk to Ducky";
+  questionInput.placeholder = listening ? "Listening..." : "Ask Ducky...";
+}
+
+// Rust listens through the Mac's own speech recognition and sends the words as events.
+function setUpVoice() {
+  if (!isTauri()) {
+    micButton.hidden = true;
+    return;
+  }
+
+  micButton.addEventListener("click", () => {
+    if (isListening) {
+      void invoke("stop_listening");
+      return;
+    }
+    setListening(true);
+    void invoke("start_listening");
+  });
+
+  void listen<{ text: string; isFinal: boolean }>("voice-transcript", (event) => {
+    questionInput.value = event.payload.text;
+  });
+  void listen<string>("voice-error", (event) => addMessage("error", event.payload));
+  void listen("voice-stopped", () => {
+    setListening(false);
+    questionInput.focus();
+  });
+}
+
+setUpVoice();
 transport.onMessage(handleMessage);

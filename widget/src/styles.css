@@ -112,3 +112,24 @@ button:disabled {
 [hidden] {
   display: none !important;
 }
+
+#mic {
+  background-color: #2e2e34;
+  padding: 8px 10px;
+}
+
+#mic.listening {
+  background-color: #c0392b;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+
+#mic svg {
+  display: block;
+}

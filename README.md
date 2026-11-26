@@ -9,10 +9,10 @@ Press a hotkey, say or type a question, and Ducky answers by looking at the righ
 ## How it works
 
 ```
-Wispr Flow (voice) -> widget -> sidecar (agent) -> tools -> answer back
+Voice (macOS speech) -> widget -> sidecar (agent) -> tools -> answer back
 ```
 
-- **Voice:** [Wispr Flow](https://wisprflow.ai) dictates straight into the widget's input box.
+- **Voice:** macOS Dictation types into the widget's input box today. Click-to-talk with macOS speech recognition is planned (#21, #22).
 - **Widget:** a macOS menu-bar app built with Tauri and plain HTML, CSS and TypeScript (Vite, vanilla-ts). It handles the hotkey, tray icon, input box, message list and "working..." state.
 - **Sidecar:** a Node + TypeScript process started and stopped by the widget. It runs the agent and holds the AWS credentials, so they never reach the widget.
 - **Agent:** the Claude Agent SDK, running Claude on AWS Bedrock inside the right repo.
@@ -46,6 +46,14 @@ Every message about a question carries the `id` the widget gave it, so several q
 
 The app starts and stops the sidecar itself (`node --import tsx src/server.ts` in `sidecar/`). Rust owns the process: the webview can only call one command, `send_to_sidecar`, and listen for `sidecar-message` events. If the sidecar crashes it is restarted once; if it keeps stopping, the widget shows an error.
 
+### Voice
+
+Click the microphone, speak, and pause. The words appear in the text box as you speak; press Enter to send. Recognition runs on this Mac using macOS's own speech recognition, so no audio leaves the machine.
+
+- **Turn on Dictation** in System Settings, Keyboard, Dictation. If it is off, Ducky says so.
+- **Set your language.** Run with `DUCKY_SPEECH_LOCALE` set to the language you dictate in, for example `DUCKY_SPEECH_LOCALE=en-ZA npm run tauri dev`. Without it Ducky uses your system language, and that language may have no on-device speech model (macOS then reports "Siri and Dictation are disabled").
+- **Start the app from a terminal that already has Speech Recognition permission** (System Settings, Privacy & Security, Speech Recognition lists them). macOS asks the app that launched Ducky for permission, not Ducky itself. Starting from VS Code's terminal makes macOS stop the app the first time you click the microphone, because VS Code has no speech usage text. A built app is its own app and should ask for its own permission; that is not tested yet (#17).
+
 Limitations for now:
 - Development only. Packaging the sidecar into a release build is not done.
 - Node must be on the `PATH` of the terminal you start it from. Launching from Finder will not see your shell's `PATH`.
@@ -68,7 +76,7 @@ Out of scope for now: Slack, Google Drive and other connectors, web search, Wind
 - Node.js 24 or later
 - Rust (`rustup`), needed to build the Tauri widget
 - An AWS profile with access to Amazon Bedrock, signed in (for example `aws sso login --profile <profile>`)
-- Wispr Flow, if you want voice input
+- macOS Dictation turned on (System Settings, Keyboard, Dictation), if you want voice input
 
 ## Configuration
 
