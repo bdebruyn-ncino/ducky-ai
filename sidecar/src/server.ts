@@ -39,7 +39,23 @@ function pickRepo(question: string, project: string | undefined, repos: string[]
   return match.status === "found" ? { repo: match.name } : { options: match.options };
 }
 
-const CONFIRMATION_TIMEOUT_MS = 30_000;
+// Anything unanswered for this long is denied. The environment variable lets tests use a short wait.
+const CONFIRMATION_TIMEOUT_MS = Number(process.env.DUCKY_CONFIRMATION_TIMEOUT_MS) || 30_000;
+
+function describeDecision(response: ConfirmationResponse | undefined): string {
+  if (!response) {
+    return "cancelled";
+  }
+  if (!response.approved) {
+    return "denied";
+  }
+  return response.choice ? `chose ${response.choice}` : "approved";
+}
+
+// Every decision is logged. stderr, never stdout: stdout carries the protocol.
+function logDecision(summary: string, decision: string) {
+  console.error(`[confirmation] ${decision}: ${summary}`);
+}
 
 function askUser(questionId: string, summary: string, options: string[]) {
   const confirmationId = randomUUID();
@@ -47,6 +63,8 @@ function askUser(questionId: string, summary: string, options: string[]) {
   return new Promise<ConfirmationResponse | undefined>((resolve) => {
     const timer = setTimeout(() => {
       pendingConfirmations.delete(confirmationId);
+      logDecision(summary, "timed out, denied");
+      send({ type: "confirmation-expired", id: questionId, confirmationId });
       resolve(undefined);
     }, CONFIRMATION_TIMEOUT_MS);
 
@@ -54,6 +72,7 @@ function askUser(questionId: string, summary: string, options: string[]) {
       questionId,
       resolve: (response) => {
         clearTimeout(timer);
+        logDecision(summary, describeDecision(response));
         resolve(response);
       },
     });

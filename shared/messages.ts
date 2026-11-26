@@ -14,13 +14,15 @@ export type ServerMessage =
   | { type: "cancelled"; id: string }
   | { type: "error"; id?: string; message: string }
   // Asks the user to approve an action, or to pick one of `options` (for example which repo).
-  | { type: "confirmation-request"; id: string; confirmationId: string; summary: string; options?: string[] };
+  | { type: "confirmation-request"; id: string; confirmationId: string; summary: string; options?: string[] }
+  // Nobody answered in time, so the request was denied. The widget can remove its buttons.
+  | { type: "confirmation-expired"; id: string; confirmationId: string };
 
 export function encode(message: ClientMessage | ServerMessage): string {
   return JSON.stringify(message) + "\n";
 }
 
-const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request"];
+const SERVER_MESSAGE_TYPES = ["ready", "status", "answer", "cancelled", "error", "confirmation-request", "confirmation-expired"];
 
 const isString = (value: unknown): value is string => typeof value === "string";
 const isOptionalString = (value: unknown) => value === undefined || isString(value);

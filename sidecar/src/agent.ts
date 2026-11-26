@@ -26,7 +26,7 @@ function bedrockEnv(config: DuckyConfig) {
 
 // Called before each tool use. Read-only tools are auto-approved; anything
 // else is routed through onConfirm (if provided) or denied immediately.
-function makeCanUseTool(
+export function makeCanUseTool(
   onConfirm?: (summary: string) => Promise<boolean>,
 ) {
   return async (

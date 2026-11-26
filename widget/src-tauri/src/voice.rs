@@ -38,7 +38,7 @@ const MAX_LISTEN: Duration = Duration::from_secs(60);
 const FINAL_RESULT_GRACE: Duration = Duration::from_secs(3);
 
 const NOT_ALLOWED: &str = "Speech recognition is not allowed. Turn it on in System Settings, Privacy & Security, Speech Recognition.";
-const DICTATION_OFF: &str = "Voice needs macOS Dictation. Turn it on in System Settings, Keyboard, Dictation, then click the microphone again.";
+const DICTATION_OFF: &str = "Voice needs macOS Dictation. Turn it on in System Settings, Keyboard, Dictation, then click the duck again.";
 const DICTATION_UNAVAILABLE: &str = "macOS says Dictation is off, or is not set up for this language. In System Settings, Keyboard, Dictation, check it is on and set to your language, or set DUCKY_SPEECH_LOCALE to the language you dictate in (for example en-ZA).";
 const MIC_DENIED: &str =
     "Microphone access is off. Turn it on in System Settings, Privacy & Security, Microphone.";
@@ -101,6 +101,10 @@ fn report_error(app: &AppHandle, message: &str) {
 
 // Reads the Dictation switch in System Settings. If it cannot be read, assume it is on and let
 // the recognizer decide, since the setting's name is not a documented, stable API.
+pub fn dictation_enabled() -> bool {
+    !dictation_is_off()
+}
+
 fn dictation_is_off() -> bool {
     Command::new("defaults")
         .args(["read", "com.apple.assistant.support", "Dictation Enabled"])

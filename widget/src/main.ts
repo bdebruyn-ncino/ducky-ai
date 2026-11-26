@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { ServerMessage } from "../../shared/messages.ts";
+import { createDuck } from "./duck.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { createTransport } from "./transport.ts";
 import { setUpVoice } from "./voice.ts";
@@ -32,6 +33,7 @@ const form = byId<HTMLFormElement>("ask-form");
 const questionInput = byId<HTMLInputElement>("question");
 const askButton = byId<HTMLButtonElement>("ask");
 const duckButton = byId<HTMLButtonElement>("duck");
+const duck = createDuck(duckButton);
 const modeToggle = byId<HTMLButtonElement>("mode-toggle");
 
 function addMessage(kind: MessageKind, text: string) {
@@ -47,12 +49,13 @@ function setActivity(activity: Activity) {
   workingBar.hidden = activity === "idle";
   workingText.textContent = activity === "waiting" ? "Ducky needs your answer" : "Ducky is working...";
   askButton.disabled = activity === "working" || activity === "waiting";
-  duckButton.classList.toggle("working", activity === "working");
-  duckButton.classList.toggle("sending", activity === "sending");
+  duck.setActivity(activity);
 }
 
 function finishQuestion() {
   activeQuestionId = undefined;
+  // Confirmation buttons left over from this question (for example after Cancel) can no longer be used.
+  messageList.querySelectorAll(".message.confirmation button").forEach((button) => button.remove());
   setActivity("idle");
   questionInput.focus();
 }
@@ -147,20 +150,24 @@ function handleMessage(message: ServerMessage) {
       item.scrollIntoView({ block: "end" });
       void notifyIfHidden("Ducky has your answer");
       finishQuestion();
+      duck.react("done");
       break;
     }
     case "error":
       addMessage("error", message.message);
       void notifyIfHidden("Ducky ran into a problem");
       finishQuestion();
+      duck.react("error");
       break;
     case "cancelled":
       addMessage("note", "Cancelled.");
       finishQuestion();
+      duck.react("cancelled");
       break;
     case "confirmation-request": {
       const item = document.createElement("li");
       item.className = "message confirmation";
+      item.dataset.confirmationId = message.confirmationId;
 
       const label = document.createElement("span");
       // textContent, never innerHTML: summary comes from the agent.
@@ -180,6 +187,8 @@ function handleMessage(message: ServerMessage) {
           approved,
           choice,
         });
+        // The agent carries on after any answer. If it was a no, the sidecar follows up with "cancelled".
+        setActivity("working");
       };
 
       if (message.options && message.options.length > 0) {
@@ -221,6 +230,21 @@ function handleMessage(message: ServerMessage) {
       void notifyIfHidden("Ducky needs your answer");
       break;
     }
+    case "confirmation-expired": {
+      const item = [...messageList.querySelectorAll<HTMLElement>(".message.confirmation")].find(
+        (candidate) => candidate.dataset.confirmationId === message.confirmationId,
+      );
+      if (item) {
+        item.querySelectorAll("button").forEach((button) => button.remove());
+        const result = document.createElement("span");
+        result.className = "confirmation-result";
+        result.textContent = "No answer, so it was denied.";
+        item.append(result);
+      }
+      // The agent carries on without it.
+      setActivity("working");
+      break;
+    }
     case "ready":
       break;
   }
@@ -235,8 +259,13 @@ const voice = setUpVoice(duckButton, modeToggle, {
       startCountdown(text.trim());
     }
   },
-  onError: (message) => addMessage("error", message),
+  onError: (message) => {
+    addMessage("error", message);
+    duck.react("error");
+  },
+  onDictationChanged: (isOn) => duck.setVoiceAvailable(isOn),
   onListeningChanged: (isListening) => {
+    duck.setListening(isListening);
     questionInput.placeholder = isListening ? "Listening..." : "Ask Ducky...";
   },
   onDuckClick: cancelCountdown,

@@ -8,6 +8,7 @@ export interface VoiceHandlers {
   onFinalTranscript(text: string): void;
   onError(message: string): void;
   onListeningChanged(isListening: boolean): void;
+  onDictationChanged(isOn: boolean): void;
   // Lets the page use a duck click for something else, like stopping a countdown. Return true if it did.
   onDuckClick(): boolean;
 }
@@ -26,16 +27,37 @@ export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButton
   }
 
   let listening = false;
+  let dictationOn = true;
   let textOnly = localStorage.getItem(TEXT_ONLY_KEY) === "true";
 
   function stop() {
     void invoke("stop_listening");
   }
 
+  function updateTitle() {
+    if (!dictationOn) {
+      duckButton.title = "Dictation is off. Turn it on in System Settings, Keyboard, Dictation.";
+    } else {
+      duckButton.title = listening ? "Stop listening" : "Talk to Ducky";
+    }
+  }
+
+  // The switch lives in System Settings, so look again whenever the window comes back into focus.
+  function refreshDictation() {
+    invoke<boolean>("dictation_enabled")
+      .then((isOn) => {
+        if (isOn !== dictationOn) {
+          dictationOn = isOn;
+          updateTitle();
+          handlers.onDictationChanged(isOn);
+        }
+      })
+      .catch(() => {});
+  }
+
   function setListening(next: boolean) {
     listening = next;
-    duckButton.classList.toggle("listening", next);
-    duckButton.title = next ? "Stop listening" : "Talk to Ducky";
+    updateTitle();
     handlers.onListeningChanged(next);
   }
 
@@ -55,7 +77,10 @@ export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButton
       stop();
       return;
     }
-    setListening(true);
+    if (dictationOn) {
+      setListening(true);
+    }
+    // With Dictation off, Rust says so in the conversation.
     void invoke("start_listening");
   });
 
@@ -74,8 +99,13 @@ export function setUpVoice(duckButton: HTMLButtonElement, modeToggle: HTMLButton
     }
   });
   void listen<string>("voice-error", (event) => handlers.onError(event.payload));
-  void listen("voice-stopped", () => setListening(false));
+  void listen("voice-stopped", () => {
+    setListening(false);
+    refreshDictation();
+  });
+  window.addEventListener("focus", refreshDictation);
 
   applyMode();
+  refreshDictation();
   return { isListening: () => listening, stop };
 }
