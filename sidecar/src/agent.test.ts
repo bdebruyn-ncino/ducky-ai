@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeCanUseTool } from "./agent.ts";
+import { explainFailure, makeCanUseTool } from "./agent.ts";
 
 const signal = new AbortController().signal;
 const neverAsk = async () => {
@@ -42,4 +42,24 @@ test("a question that was cancelled is denied without asking", async () => {
   cancelled.abort();
   const result = await makeCanUseTool(neverAsk)("Edit", {}, { signal: cancelled.signal });
   assert.equal(result.behavior, "deny");
+});
+
+test("a question that hits its spending cap says so, with the cap", () => {
+  assert.match(explainFailure("error_max_budget_usd", 1), /spending cap \(\$1\.00\)/);
+  assert.match(explainFailure("error_max_budget_usd", 0.5), /\$0\.50/);
+});
+
+test("a question that takes too many steps says so", () => {
+  assert.match(explainFailure("error_max_turns"), /too many steps/);
+});
+
+test("any other way of failing keeps its own name", () => {
+  assert.equal(explainFailure("error_during_execution"), "error_during_execution");
+});
+
+test("a shell command that only looks runs without asking, any other asks", async () => {
+  const canUseTool = makeCanUseTool(async () => false);
+  assert.deepEqual(await canUseTool("Bash", { command: "git status" }, { signal }), { behavior: "allow" });
+  assert.equal((await canUseTool("Bash", { command: "git push" }, { signal })).behavior, "deny");
+  assert.equal((await canUseTool("Bash", { command: "ls; rm -rf ." }, { signal })).behavior, "deny");
 });

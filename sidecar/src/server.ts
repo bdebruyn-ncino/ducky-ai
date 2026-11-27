@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { decodeClientMessage, encode, type ClientMessage, type HistoryKind, type ServerMessage } from "../../shared/messages.ts";
 import { runAgent } from "./agent.ts";
@@ -6,6 +7,7 @@ import { configFromDb, loadConfigFromJson, type DuckyConfig } from "./config.ts"
 import { addHistory, clearHistory, openDb, readHistory, readProjects, readSettings, writeProjects, writeSettings } from "./db.ts";
 import { findRepoInText, listRepos, resolveProject } from "./projects.ts";
 import { runSetup } from "./setup.ts";
+import { describePreApproved, findPreApprovedRules, projectSettingsFiles, userSettingsFiles } from "./settings-check.ts";
 import { chooseDefaults, detectReposRoot, readLegacyConfig } from "./setup-defaults.ts";
 
 type AskMessage = Extract<ClientMessage, { type: "ask" }>;
@@ -66,6 +68,20 @@ function getRepos(): string[] {
     return listRepos(config.reposRoot);
   }
   return [];
+}
+
+// Once per place (the user's settings, or one repo's), say if Claude settings pre-approve tools, since that skips the approval step.
+const warnedAboutPreApproved = new Set<string>();
+function warnIfPreApproved(key: string, files: string[], where: string) {
+  if (warnedAboutPreApproved.has(key)) {
+    return;
+  }
+  warnedAboutPreApproved.add(key);
+  const note = describePreApproved(findPreApprovedRules(files), where);
+  if (note) {
+    console.error(`[settings] ${note}`);
+    send({ type: "note", text: note });
+  }
 }
 
 function pickRepo(question: string, project: string | undefined, repos: string[]): { repo: string } | { options: string[] } {
@@ -155,7 +171,14 @@ function makeOnConfirm(questionId: string) {
 }
 
 // Returns the repo to run in, or undefined when the user cancelled.
-async function chooseRepo(id: string, question: string, project: string | undefined): Promise<string | undefined> {
+// A question that names no repo is answered from the repos folder, so "what is 2 + 2?" needs no repo.
+const GENERAL = Symbol("general question");
+
+async function chooseRepo(
+  id: string,
+  question: string,
+  project: string | undefined,
+): Promise<string | typeof GENERAL | undefined> {
   const repos = getRepos();
   const choice = pickRepo(question, project, repos);
   if ("repo" in choice) {
@@ -167,10 +190,17 @@ async function chooseRepo(id: string, question: string, project: string | undefi
     return currentRepo;
   }
 
+  // Every repo offered means nothing in the question matched any of them.
+  if (!project && choice.options.length === repos.length) {
+    return GENERAL;
+  }
+
   const response = await askUser(id, "Which repo do you mean?", choice.options);
   const picked = response?.choice;
   return response?.approved && picked && choice.options.includes(picked) ? picked : undefined;
 }
+
+const GENERAL_SESSION_KEY = "(general)";
 
 async function handleAsk({ id, question, project }: AskMessage) {
   const abortController = new AbortController();
@@ -179,24 +209,30 @@ async function handleAsk({ id, question, project }: AskMessage) {
   let repo: string | undefined;
   let startedAt = Date.now();
   try {
-    repo = await chooseRepo(id, question, project);
-    if (!repo) {
+    const choice = await chooseRepo(id, question, project);
+    if (!choice) {
       send({ type: "cancelled", id });
       return;
     }
+    const isGeneral = choice === GENERAL;
+    repo = isGeneral ? undefined : choice;
     record("question", question, repo);
+    if (repo) {
+      warnIfPreApproved(repo, projectSettingsFiles(join(config!.reposRoot, repo)), `the ${repo} repo's Claude settings`);
+    }
 
     // Only now is Ducky actually working; until here it may have been waiting for the user.
     send({ type: "status", id, state: "working" });
     startedAt = Date.now();
     const chosenRepo = repo;
+    const sessionKey = chosenRepo ?? GENERAL_SESSION_KEY;
     const result = await runAgent(
       config!,
       chosenRepo,
       question,
       abortController,
       makeOnConfirm(id),
-      sessionByProject.get(chosenRepo),
+      sessionByProject.get(sessionKey),
       (text) => {
         send({ type: "activity", id, text });
         record("activity", text, chosenRepo);
@@ -205,13 +241,17 @@ async function handleAsk({ id, question, project }: AskMessage) {
 
     // How long the agent took, including any time spent waiting for the user to approve something.
     const durationMs = Date.now() - startedAt;
-    console.error(`[ask] ${chosenRepo}: ${result.ok ? "answered" : "failed"} in ${(durationMs / 1000).toFixed(1)}s`);
+    // The cost is the SDK's own estimate in US dollars, not a bill.
+    const spent = result.costUsd !== undefined ? `, ${result.turns} turns, about $${result.costUsd.toFixed(3)}` : "";
+    console.error(`[ask] ${chosenRepo ?? "general"}: ${result.ok ? "answered" : "failed"} in ${(durationMs / 1000).toFixed(1)}s${spent}`);
     if (abortController.signal.aborted) {
       record("cancelled", "Cancelled", chosenRepo, durationMs);
       send({ type: "cancelled", id });
     } else if (result.ok) {
-      currentRepo = chosenRepo;
-      sessionByProject.set(chosenRepo, result.sessionId);
+      if (chosenRepo) {
+        currentRepo = chosenRepo;
+      }
+      sessionByProject.set(sessionKey, result.sessionId);
       record("answer", result.answer, chosenRepo, durationMs);
       send({ type: "answer", id, text: result.answer });
     } else {
@@ -358,6 +398,7 @@ function handle(message: ClientMessage) {
       send({ type: "history", entries: [] });
       break;
     case "widget-ready":
+      warnIfPreApproved("user", userSettingsFiles(), "your Claude settings");
       // The widget can only hear us from now on, so this is the moment first-run setup can begin.
       if (setupInProgress) {
         resendSetupStep();

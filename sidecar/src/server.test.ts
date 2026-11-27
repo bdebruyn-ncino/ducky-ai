@@ -16,7 +16,7 @@ let configPath: string;
 before(() => {
   workDir = mkdtempSync(join(tmpdir(), "ducky-server-test-"));
   const reposRoot = join(workDir, "repos");
-  for (const repo of ["alpha-api", "beta-web"]) {
+  for (const repo of ["alpha-api", "alpha-web", "beta-tool"]) {
     mkdirSync(join(reposRoot, repo, ".git"), { recursive: true });
   }
   configPath = join(workDir, "ducky.config.json");
@@ -32,7 +32,8 @@ after(() => rmSync(workDir, { recursive: true, force: true }));
 function startSidecar(extraEnv: Record<string, string> = {}) {
   const child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
     cwd: sidecarDir,
-    env: { ...process.env, DUCKY_CONFIG: configPath, ...extraEnv },
+    // HOME is a throwaway folder, so the tests never read the developer's own Claude or AWS settings.
+    env: { ...process.env, HOME: workDir, DUCKY_CONFIG: configPath, ...extraEnv },
     stdio: ["pipe", "pipe", "inherit"],
   });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
@@ -75,18 +76,33 @@ test("a line that is not a valid message gets an error without an id", timeout, 
   }
 });
 
-test("a question that names no repo asks the user to pick one", timeout, async () => {
+test("a question that could mean several repos asks the user to pick one", timeout, async () => {
   const sidecar = startSidecar();
   try {
     await sidecar.next();
-    sidecar.send({ type: "ask", id: "q1", question: "hello there" });
+    sidecar.send({ type: "ask", id: "q1", question: "tell me about alpha" });
 
     // The first reply is the question to the user: Ducky is waiting, not working.
     const request = await sidecar.next();
     assert.equal(request.type, "confirmation-request");
     if (request.type === "confirmation-request") {
-      assert.deepEqual(request.options, ["alpha-api", "beta-web"]);
+      assert.deepEqual(request.options, ["alpha-api", "alpha-web"]);
     }
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("a general question names no repo and is not stopped to pick one", timeout, async () => {
+  const sidecar = startSidecar();
+  try {
+    await sidecar.next();
+    sidecar.send({ type: "ask", id: "q1", question: "what is 2 + 2?" });
+
+    // The agent cannot answer in the test environment, but it must start instead of asking for a repo.
+    const message = await sidecar.next();
+    assert.notEqual(message.type, "confirmation-request");
+    assert.deepEqual(message, { type: "status", id: "q1", state: "working" });
   } finally {
     sidecar.stop();
   }
@@ -96,7 +112,7 @@ test("denying the repo choice cancels the question", timeout, async () => {
   const sidecar = startSidecar();
   try {
     await sidecar.next();
-    sidecar.send({ type: "ask", id: "q1", question: "hello there" });
+    sidecar.send({ type: "ask", id: "q1", question: "tell me about alpha" });
     const request = await sidecar.next();
     if (request.type !== "confirmation-request") {
       assert.fail("expected a confirmation request");
@@ -115,7 +131,7 @@ test("new-session clears the repo memory so the next question asks again", timeo
     await sidecar.next(); // ready
 
     // Pick a repo so it is remembered.
-    sidecar.send({ type: "ask", id: "q1", question: "hello there" });
+    sidecar.send({ type: "ask", id: "q1", question: "tell me about alpha" });
     const req1 = await sidecar.next();
     assert.equal(req1.type, "confirmation-request");
     if (req1.type !== "confirmation-request") return;
@@ -123,14 +139,20 @@ test("new-session clears the repo memory so the next question asks again", timeo
     // The question now runs (and will time-out / fail in the test env — that's fine,
     // we just need to cancel before waiting for a real agent answer).
     sidecar.send({ type: "cancel", id: "q1" });
-    await sidecar.next(); // cancelled
+    // The question may say "working" before it hears the cancel, so read until it says "cancelled".
+    for (;;) {
+      const message = await sidecar.next();
+      if (message.type === "cancelled") {
+        break;
+      }
+    }
 
     // Clear the session.
     sidecar.send({ type: "new-session" });
     assert.deepEqual(await sidecar.next(), { type: "session-cleared" });
 
     // After new-session, an ambiguous question should ask again.
-    sidecar.send({ type: "ask", id: "q2", question: "hello again" });
+    sidecar.send({ type: "ask", id: "q2", question: "tell me about alpha again" });
     const req2 = await sidecar.next();
     assert.equal(req2.type, "confirmation-request");
   } finally {
@@ -167,7 +189,7 @@ test("a choice that was not on offer cancels the question", timeout, async () =>
   const sidecar = startSidecar();
   try {
     await sidecar.next();
-    sidecar.send({ type: "ask", id: "q1", question: "hello there" });
+    sidecar.send({ type: "ask", id: "q1", question: "tell me about alpha" });
     const request = await sidecar.next();
     if (request.type !== "confirmation-request") {
       assert.fail("expected a confirmation request");
@@ -190,7 +212,7 @@ test("a request nobody answers is denied after the timeout", timeout, async () =
   const sidecar = startSidecar({ DUCKY_CONFIRMATION_TIMEOUT_MS: "300" });
   try {
     await sidecar.next();
-    sidecar.send({ type: "ask", id: "q1", question: "hello there" });
+    sidecar.send({ type: "ask", id: "q1", question: "tell me about alpha" });
     const request = await sidecar.next();
     if (request.type !== "confirmation-request") {
       assert.fail("expected a confirmation request");
@@ -291,6 +313,42 @@ test("history from before a restart is still there, and can be cleared", timeout
 
     sidecar.send({ type: "history-request" });
     assert.deepEqual(await sidecar.next(), { type: "history", entries: [] });
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("the user is told when their Claude settings pre-approve tools", timeout, async () => {
+  const home = join(workDir, "home-with-rules");
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(
+    join(home, ".claude", "settings.json"),
+    JSON.stringify({ permissions: { allow: ["Bash(git status)", "Edit"] } }),
+  );
+
+  const sidecar = startSidecar({ HOME: home });
+  try {
+    await sidecar.next(); // ready
+    sidecar.send({ type: "widget-ready" });
+
+    const note = await sidecar.next();
+    assert.equal(note.type, "note");
+    if (note.type === "note") {
+      assert.match(note.text, /pre-approves 2 tool rules \(Bash\(git status\), Edit\)/);
+    }
+  } finally {
+    sidecar.stop();
+  }
+});
+
+test("a user with no pre-approved tools is not bothered", timeout, async () => {
+  const sidecar = startSidecar();
+  try {
+    await sidecar.next(); // ready
+    sidecar.send({ type: "widget-ready" });
+    // With a saved config and nothing to warn about, the next thing is whatever we ask for.
+    sidecar.send({ type: "history-request" });
+    assert.equal((await sidecar.next()).type, "history");
   } finally {
     sidecar.stop();
   }

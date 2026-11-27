@@ -5,7 +5,7 @@ A rubber duck for your Mac that can read your code and tickets. Press a hotkey, 
 ## What it does (the demo, about 5 minutes)
 
 1. **First run.** Open Ducky with nothing saved: the window comes forward by itself and setup asks for the AWS profile, the model ARN and where the repos live, with suggestions pre-filled.
-2. **Ask by voice.** Click the duck and say "What does the autospread repo do?". The words appear as you speak; after a pause Ducky counts down two seconds (click the duck or press Esc to stop it), then sends. No repo name needed in the sentence: Ducky finds it, or asks with buttons.
+2. **Ask by voice.** Click the duck and say "What does the autospread repo do?". The words appear as you speak; after a pause Ducky counts down two seconds (click the duck or press Esc to stop it), then sends. No repo name needed in the sentence: Ducky finds it, or asks with buttons. A general question that names no repo ("what is 2 + 2?") is simply answered.
 3. **The answer** arrives as sanitised Markdown with copyable code blocks, and the duck reacts (working, thinking, done). Hide the window while it works and a macOS notification tells you when it is ready.
 4. **Follow up.** "And where is that configured?" Ducky remembers the conversation and the repo.
    While it works, the status line shows what it is doing ("Reading README.md", "Searching for ...").
@@ -40,7 +40,7 @@ A rubber duck for your Mac that can read your code and tickets. Press a hotkey, 
 
 - **Audio stays on the Mac.** Recognition is forced on-device; nothing is recorded to disk.
 - **Credentials stay out of the page.** AWS access uses the user's own SSO profile inside the sidecar. The GitHub token comes from `gh auth token` and goes only to the GitHub tool. The Jira login is the user's own Claude Code one. The settings database holds a profile name, a model ARN and a folder path, no secrets.
-- **Read-only by default.** Reading files, searching, and the Jira and GitHub lookups run on their own. Any other tool (editing, running a command, changing a ticket) shows what it wants to do and waits for Approve or Deny; silence is a no after 30 seconds, and every decision is logged.
+- **Read-only by default.** Reading files, searching, and the Jira and GitHub lookups run on their own. A short list of read-only shell commands (listing files, `git status`, `gh issue list`, with no pipes or redirects) also runs on its own. Any other tool (editing, running another command, changing a ticket) shows what it wants to do and waits for Approve or Deny; silence is a no after 30 seconds, and every decision is logged.
 - **The page is treated as untrusted.** A strict content-security policy, narrow Tauri permissions, four exposed commands, and agent output rendered only through a sanitiser (DOMPurify with an allow-list; links are never clickable; agent text is never inserted as raw HTML).
 - **History stays on the Mac** in the same local database as the settings, capped at 500 entries, with a clear button. It holds your questions and the answers (so treat it like shell history); it is never sent anywhere.
 - **Data that leaves the Mac:** the question and the files the agent reads go to Claude on Bedrock in the company's AWS account, the same as using Claude Code there. Nothing else, and no telemetry.

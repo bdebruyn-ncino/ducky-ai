@@ -4,7 +4,7 @@ A rubber duck for your Mac that can read your code and tickets.
 
 Press a hotkey, say or type a question, and Ducky answers by looking at the right repo, Jira and GitHub. It's rubber duck debugging, except the duck can look things up.
 
-> Status: hackathon project. See [STAGE-1-PROBLEM.md](STAGE-1-PROBLEM.md) for the problem we're solving, [STAGE-2-SOLUTION.md](STAGE-2-SOLUTION.md) for what we built and why, and [TRIAL.md](TRIAL.md) for the trial sheet.
+> Status: hackathon project. See [STAGE-1-PROBLEM.md](STAGE-1-PROBLEM.md) for the problem we're solving, [STAGE-2-SOLUTION.md](STAGE-2-SOLUTION.md) for what we built and why, and [STAGE-3-COMMERCIALS.md](STAGE-3-COMMERCIALS.md) for the costs and business case, and [TRIAL.md](TRIAL.md) for the trial sheet.
 
 ## How it works
 
@@ -77,7 +77,7 @@ Ducky never changes anything without your yes. Read-only tools (reading files, s
 - No answer within 30 seconds counts as a no: the buttons disappear and Ducky carries on without it.
 - When Ducky is not sure which repo you mean, the same mechanism shows one button per repo.
 - Every decision is logged to the terminal as `[confirmation] approved: ...`, `denied`, `timed out, denied` and so on.
-- The gate is the SDK's `canUseTool`, which is skipped for anything your own Claude settings already allow. Ducky also reads your global Claude settings, so a broad `allow` rule there would let a tool run without asking. #27 covers hardening this.
+- The gate is the SDK's `canUseTool`, which is skipped for anything your own Claude settings already allow. Ducky also reads your global Claude settings (and the repo's), so a broad `allow` rule there would let a tool run without asking. Ducky now says so in the conversation when it finds such rules, and switches off your personal shell hooks while it works. It cannot yet override the rules themselves (#27).
 
 ## History
 

@@ -22,7 +22,12 @@ const config =
     return configFromDb(settings);
   })();
 
+const startedAt = Date.now();
 const result = await runAgent(config, project, question);
+// The same line the app prints, so a question asked here can be measured the same way.
+const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+const spent = result.costUsd !== undefined ? `, ${result.turns} turns, about $${result.costUsd.toFixed(3)}` : "";
+console.error(`[ask] ${project}: ${result.ok ? "answered" : "failed"} in ${seconds}s${spent}`);
 if (result.ok) {
   console.log(result.answer);
 } else {
