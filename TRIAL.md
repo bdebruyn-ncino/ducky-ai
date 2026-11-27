@@ -41,13 +41,34 @@ Use real questions from your own work if you can. These are safe starters:
 
 Tester: ______________  Date: ______________  Voice or typed: ______________
 
+## Early log: one voice session (Brandon, 26 Nov 2026)
+
+Eight questions asked by voice in one sitting, read from the terminal log. This is cost and time only: whether each answer was right was not recorded, and there is no by-hand time, so it does not count towards the targets above.
+
+| # | Question (as heard) | `[ask]` time | Turns | Cost (US$) | Approvals asked |
+|---|---|---|---|---|---|
+| 1 | What does the auto spreads repo do? | 26.5 s | 4 | $0.062 | 2 (reading READMEs) |
+| 2 | Can you summarise this in a few words | 6.6 s | 1 | $0.068 | 0 |
+| 3 | And where is this configured? | 11.7 s | 2 | $0.084 | 0 |
+| 4 | Can you summarise our chat into a few words so it's easy to read | 7.2 s | 1 | $0.091 | 0 |
+| 5 | What is 2+2 | 6.2 s | 1 | $0.095 | 0 |
+| 6 | And what is the answer or the question to life the universe and everything in it | 9.2 s | 1 | $0.029 | 1 (picking a repo) |
+| 7 | Thank you ducky, is there anything that you want to tell me | 9.0 s | 1 | $0.101 | 0 |
+| 8 | Can you check the AI issues that are outstanding | 14.8 s | 2 | $0.115 | 1 (listing GitHub issues) |
+
+What it showed:
+- **Cost climbs with the conversation:** questions 1 to 8 (except 6, which was a fresh start) cost more each time, because the whole conversation is sent again. Even 2+2 cost about 9 cents.
+- **Approval friction:** three harmless lookups stopped to ask. Safe read-only shell commands now run without asking.
+- **Repo mix-ups:** greeting Ducky by name ("hey ducky ...") was taken as the ducky repo, and loose word matches turned the general question (6) into a repo prompt. Both fixed.
+- **Speech:** "Ducky" is often heard as "Duggee", and the first words are sometimes garbled until the final result corrects them.
+
 ## Summary (fill in at the end)
 - Median Ducky total time: ____ s (target: under 60 s). Slowest: ____ s.
 - Median by-hand time: ____ s. Ducky was ____ times faster / slower.
 - Answers right: ____ of ____. Partly right: ____. Wrong: ____.
 - Things the tester corrected: ______________________________________
 - Things that confused the tester: ___________________________________
-- Median cost per question: US$ ____ (this feeds [STAGE-3-COMMERCIALS.md](STAGE-3-COMMERCIALS.md), which already has four code questions measured at a median of about $0.05 and 16 seconds; the trial should add Jira, GitHub and follow-up questions).
+- Median cost per question: US$ ____ (this feeds [STAGE-3-COMMERCIALS.md](STAGE-3-COMMERCIALS.md), which already has 12 questions measured at a median of about $0.07 and 11 seconds; the trial should add Jira lookups and longer conversations).
 - Honest limits: number of testers ____, what kind of questions, anything that made the numbers unrepresentative.
 
 ## Check once before the demo
