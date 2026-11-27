@@ -89,3 +89,27 @@ test("two repos named equally is unclear", () => {
     options: ["foo-api", "bar-web"],
   });
 });
+
+test("greeting Ducky by name does not pick the ducky repo", () => {
+  const withDucky = repos;
+  assert.deepEqual(findRepoInText("Hey ducky what does the auto spreads repo do", withDucky), {
+    status: "found",
+    name: "aws-autospread",
+  });
+  assert.deepEqual(findRepoInText("Thank you ducky, is there anything you want to tell me", withDucky), {
+    status: "unclear",
+    options: withDucky,
+  });
+});
+
+test("the ducky repo can still be named", () => {
+  assert.deepEqual(findRepoInText("how does the ducky repo pick a repo", ["ducky-ai", "aws-autospread"]), {
+    status: "found",
+    name: "ducky-ai",
+  });
+});
+
+test("small words such as is, it and to do not count as repo names", () => {
+  const all = [...repos, "ducky-ai-history"];
+  assert.deepEqual(findRepoInText("what is the answer to life, it is 42", all), { status: "unclear", options: all });
+});

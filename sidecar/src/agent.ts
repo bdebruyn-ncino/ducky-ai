@@ -5,6 +5,7 @@ import type { DuckyConfig } from "./config.ts";
 import { ATLASSIAN_READ_TOOLS, buildMcpServers, GITHUB_READ_TOOLS } from "./connectors.ts";
 import { describeToolUse } from "./activity.ts";
 import { listRepos, resolveProject } from "./projects.ts";
+import { isSafeReadOnlyCommand } from "./safe-commands.ts";
 
 const DUCKY_PROMPT = [
   "You are Ducky, a rubber duck for developers. Answer concisely and say which files you looked at.",
@@ -53,10 +54,14 @@ export function makeCanUseTool(
 ) {
   return async (
     toolName: string,
-    _input: Record<string, unknown>,
+    input: Record<string, unknown>,
     options: { title?: string; description?: string; signal: AbortSignal },
   ): Promise<PermissionResult> => {
     if (READ_ONLY_TOOL_SET.has(toolName)) {
+      return { behavior: "allow" };
+    }
+
+    if (toolName === "Bash" && typeof input.command === "string" && isSafeReadOnlyCommand(input.command)) {
       return { behavior: "allow" };
     }
 

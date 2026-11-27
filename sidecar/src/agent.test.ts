@@ -56,3 +56,10 @@ test("a question that takes too many steps says so", () => {
 test("any other way of failing keeps its own name", () => {
   assert.equal(explainFailure("error_during_execution"), "error_during_execution");
 });
+
+test("a shell command that only looks runs without asking, any other asks", async () => {
+  const canUseTool = makeCanUseTool(async () => false);
+  assert.deepEqual(await canUseTool("Bash", { command: "git status" }, { signal }), { behavior: "allow" });
+  assert.equal((await canUseTool("Bash", { command: "git push" }, { signal })).behavior, "deny");
+  assert.equal((await canUseTool("Bash", { command: "ls; rm -rf ." }, { signal })).behavior, "deny");
+});
